@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - logicalFilePath: db/changelog/master-changelog.yml
+  - include:
+      file: 01-create-security-instrument.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 02-create-ticker.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 03-create-market-maker.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 04-create-market-maker-instrument.sql
+      relativeToChangelogFile: true
