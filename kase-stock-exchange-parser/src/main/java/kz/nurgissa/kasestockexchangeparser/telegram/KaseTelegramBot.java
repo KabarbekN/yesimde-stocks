@@ -88,25 +88,23 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         String username = message.getFrom() != null ? message.getFrom().getUserName() : "";
         String firstName = message.getFrom() != null ? message.getFrom().getFirstName() : "";
 
-        // Register or retrieve user
-        subscriberRepository.findById(chatId)
-                .switchIfEmpty(
-                        subscriberRepository.save(TelegramSubscriberEntity.builder()
-                                .chatId(chatId)
-                                .username(username)
-                                .firstName(firstName)
-                                .subNewBonds(true)
-                                .subDiscounts(true)
-                                .subWhales(true)
-                                .subCoupons(true)
-                                .subStocks(true)
-                                .watchlist("KSPI,HSBK,KZAP,AIRA,KMGZ")
-                                .createdAt(LocalDateTime.now())
-                                .updatedAt(LocalDateTime.now())
-                                .build()
-                        )
-                )
-                .subscribe();
+        // Register or refresh user info atomically without wiping customized preferences
+        subscriberRepository.registerOrUpdate(
+                chatId,
+                username,
+                firstName,
+                true,
+                true,
+                true,
+                true,
+                true,
+                "KSPI,HSBK,KZAP,AIRA,KMGZ",
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        ).subscribe(
+                rows -> log.debug("Subscriber registered/refreshed: chatId={}", chatId),
+                e -> log.error("Error registering subscriber chatId {}: {}", chatId, e.getMessage())
+        );
 
         if (text.startsWith("/start") || text.equals("ℹ️ Меню")) {
             sendWelcome(chatId, firstName);
@@ -177,7 +175,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             log.error("Failed to update settings keyboard: {}", e.getMessage());
                         }
                     })
-                    .subscribe();
+                    .subscribe(
+                            updatedSub -> log.debug("Settings updated for chatId {}", chatId),
+                            e -> log.error("Failed to update settings for chatId {}: {}", chatId, e.getMessage())
+                    );
         } else if (data.startsWith("CALC_")) {
             String ticker = data.substring("CALC_".length());
             sendMessage(chatId, "Для расчета введите команду с суммой, например:\n<code>/calc " + ticker + " 500000</code>", null);
@@ -310,8 +311,16 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
     private void sendSubscriptionSettings(Long chatId) {
         subscriberRepository.findById(chatId)
+                .defaultIfEmpty(TelegramSubscriberEntity.builder()
+                        .chatId(chatId)
+                        .subNewBonds(true)
+                        .subDiscounts(true)
+                        .subWhales(true)
+                        .subCoupons(true)
+                        .subStocks(true)
+                        .watchlist("KSPI,HSBK,KZAP,AIRA,KMGZ")
+                        .build())
                 .doOnSuccess(sub -> {
-                    if (sub == null) return;
                     String text = "⚙️ <b>Настройки ваших уведомлений</b>\n\n" +
                             "Нажмите на кнопку ниже, чтобы включить (✅) или выключить (❌) категорию алертов в реальном времени:\n\n" +
                             "• <b>Новые облигации</b> — свежие размещения на бирже\n" +
@@ -321,7 +330,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "• <b>Акции KASE</b> — дневные скачки цен от ±3%";
                     sendMessage(chatId, text, buildSettingsInlineKeyboard(sub));
                 })
-                .subscribe();
+                .subscribe(null, e -> log.error("Error displaying settings for {}: {}", chatId, e.getMessage()));
     }
 
     private void handleBondCommand(Long chatId, String text) {
@@ -605,7 +614,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         sendMessage(chatId, "❌ Акция <code>" + ticker + "</code> удалена из вотчлиста.\nТекущий список: " + sub.getWatchlist(), null);
                     }
                 })
-                .subscribe();
+                .subscribe(
+                        sub -> log.debug("Watchlist updated for chatId {}: {}", chatId, sub != null ? sub.getWatchlist() : ""),
+                        e -> log.error("Failed to update watchlist for chatId {}: {}", chatId, e.getMessage())
+                );
     }
 
     private void sendWatchlist(Long chatId) {

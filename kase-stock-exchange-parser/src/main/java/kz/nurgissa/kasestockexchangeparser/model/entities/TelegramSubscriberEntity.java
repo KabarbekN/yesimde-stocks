@@ -2,6 +2,8 @@ package kz.nurgissa.kasestockexchangeparser.model.entities;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -12,7 +14,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TelegramSubscriberEntity {
+public class TelegramSubscriberEntity implements Persistable<Long> {
 
     @Id
     @Column("chat_id")
@@ -47,4 +49,18 @@ public class TelegramSubscriberEntity {
 
     @Column("updated_at")
     private LocalDateTime updatedAt;
+
+    @Transient
+    @Builder.Default
+    private boolean isNew = false;
+
+    @Override
+    public Long getId() {
+        return chatId;
+    }
+
+    @Override
+    public boolean isNew() {
+        return this.isNew || this.createdAt == null;
+    }
 }
