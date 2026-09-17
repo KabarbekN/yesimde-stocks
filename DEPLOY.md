@@ -70,6 +70,10 @@ nano .env
 ```env
 # Пароль для базы данных PostgreSQL
 DB_PASSWORD=your_strong_postgres_password_here
+DB_PORT=5435
+
+# Порт веб-приложения на сервере (8080 занят ornynda-backend)
+APP_PORT=8088
 
 # Telegram Бот
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
@@ -139,6 +143,6 @@ docker compose down
 ## 5. Как работает веб-интерфейс на сервере
 
 После запуска сервиса веб-интерфейс KASE & AIX Radar будет доступен по адресу:
-- `http://IP_ВАШЕГО_СЕРВЕРА:8080/`
+- `http://IP_ВАШЕГО_СЕРВЕРА:8088/`
 
 При необходимости можно настроить обратный прокси (**Nginx** или **Caddy**) с бесплатным SSL-сертификатом от Let's Encrypt для работы по домену (HTTPS).

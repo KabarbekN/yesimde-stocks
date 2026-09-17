@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "${DB_PASSWORD:-0000}"
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5435}:5432"
     volumes:
       - kase_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -39,15 +39,18 @@ services:
       TELEGRAM_BOT_USERNAME: "${TELEGRAM_BOT_USERNAME:-KaseRadarBot}"
       TELEGRAM_BOT_ENABLED: "${TELEGRAM_BOT_ENABLED:-true}"
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8088}:8080"
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=kase"
 
   watchtower:
     image: containrrr/watchtower:latest
     container_name: kase_watchtower
     restart: unless-stopped
     environment:
+      # Изоляция: обновляем только контейнеры из скоупа kase
+      WATCHTOWER_SCOPE: "kase"
       # Удалять старые образы после обновления (экономия места на диске)
       WATCHTOWER_CLEANUP: "true"
       # Обновлять ТОЛЬКО контейнеры с меткой com.centurylinklabs.watchtower.enable=true (базу данных postgres не трогаем!)
