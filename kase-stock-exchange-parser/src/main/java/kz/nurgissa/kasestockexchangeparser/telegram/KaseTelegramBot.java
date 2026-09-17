@@ -265,8 +265,23 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             e -> log.error("Failed to update settings for chatId {}: {}", chatId, e.getMessage())
                     );
         } else if (data.startsWith("CALC_")) {
-            String ticker = data.substring("CALC_".length());
-            sendMessage(chatId, "Для расчета введите команду с суммой, например:\n<code>/calc " + ticker + " 500000</code>", null);
+            String rest = data.substring("CALC_".length());
+            String ticker;
+            String amount = "500000";
+            if (rest.contains("_")) {
+                int idx = rest.lastIndexOf('_');
+                ticker = rest.substring(0, idx);
+                amount = rest.substring(idx + 1);
+            } else {
+                ticker = rest;
+            }
+            handleCalcCommand(chatId, "/calc " + ticker + " " + amount);
+        } else if (data.startsWith("BOND_")) {
+            String ticker = data.substring("BOND_".length());
+            handleBondCommand(chatId, "/bond " + ticker);
+        } else if (data.startsWith("STOCK_")) {
+            String ticker = data.substring("STOCK_".length());
+            handleStockCommand(chatId, "/stock " + ticker);
         } else if (data.startsWith("TRACK_")) {
             String ticker = data.substring("TRACK_".length());
             handleTrackCommand(chatId, "/track " + ticker, true);
@@ -278,9 +293,20 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         } else if (data.startsWith("COMPARE_")) {
             String ticker = data.substring("COMPARE_".length());
             handleArbitrageCommand(chatId, "/compare " + ticker);
+        } else if (data.startsWith("SET_ALERT_FIXED_")) {
+            String rest = data.substring("SET_ALERT_FIXED_".length());
+            int idx = rest.lastIndexOf('_');
+            if (idx > 0) {
+                String ticker = rest.substring(0, idx);
+                String price = rest.substring(idx + 1);
+                handleAlertCommand(chatId, "/alert " + ticker + " " + price);
+            }
         } else if (data.startsWith("SET_ALERT_")) {
             String ticker = data.substring("SET_ALERT_".length());
-            sendMessage(chatId, "Для установки лимита введите команду с ценой, например:\n<code>/alert " + ticker + " 55000</code>", null);
+            promptSetAlert(chatId, ticker);
+        } else if (data.startsWith("SET_THRESH_")) {
+            String val = data.substring("SET_THRESH_".length());
+            handleThresholdCommand(chatId, "/threshold " + val);
         } else if (data.startsWith("DEL_ALERT_")) {
             try {
                 Long alertId = Long.parseLong(data.substring("DEL_ALERT_".length()));
@@ -303,7 +329,61 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             String ticker = data.substring("DEPTH_".length());
             handleMarketDepthCommand(chatId, "/depth " + ticker);
         }
+    }
 
+    private void promptSetAlert(Long chatId, String ticker) {
+        technicalAnalysisService.analyzeInstrument(ticker)
+                .doOnSuccess(ta -> {
+                    BigDecimal curPrice = (ta != null && ta.getCurrentPrice() != null) ? ta.getCurrentPrice() : null;
+                    String curStr = (ta != null && ta.getCurrency() != null) ? ta.getCurrency() : "₸";
+                    String name = (ta != null && ta.getName() != null) ? ta.getName() : ticker;
+
+                    if (curPrice == null || curPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("✏️ Задать цену алерта").switchInlineQueryCurrentChat("/alert " + ticker + " ").build()
+                                ))
+                                .build();
+                        sendMessage(chatId, "🔔 <b>Установка лимита для " + escapeHtml(name) + " (<code>" + ticker + "</code>)</b>\n\n" +
+                                "Для установки лимита отправьте команду с целевой ценой:\n" +
+                                "<pre>/alert " + ticker + " ЦЕНА</pre>", kb);
+                        return;
+                    }
+
+                    BigDecimal pPlus2 = curPrice.multiply(BigDecimal.valueOf(1.02)).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal pPlus5 = curPrice.multiply(BigDecimal.valueOf(1.05)).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal pMinus2 = curPrice.multiply(BigDecimal.valueOf(0.98)).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal pMinus5 = curPrice.multiply(BigDecimal.valueOf(0.95)).setScale(2, RoundingMode.HALF_UP);
+
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📈 +2% (" + formatMoney(pPlus2) + ")").callbackData("SET_ALERT_FIXED_" + ticker + "_" + pPlus2.toPlainString()).build(),
+                                    InlineKeyboardButton.builder().text("📈 +5% (" + formatMoney(pPlus5) + ")").callbackData("SET_ALERT_FIXED_" + ticker + "_" + pPlus5.toPlainString()).build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📉 -2% (" + formatMoney(pMinus2) + ")").callbackData("SET_ALERT_FIXED_" + ticker + "_" + pMinus2.toPlainString()).build(),
+                                    InlineKeyboardButton.builder().text("📉 -5% (" + formatMoney(pMinus5) + ")").callbackData("SET_ALERT_FIXED_" + ticker + "_" + pMinus5.toPlainString()).build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("✏️ Ввести свою цену вручную").switchInlineQueryCurrentChat("/alert " + ticker + " ").build()
+                            ))
+                            .build();
+
+                    String msg = String.format(
+                            "🔔 <b>Установка лимит-уведомления: %s</b> (<code>%s</code>)\n\n" +
+                            "💵 Текущая цена: <b>%s %s</b>\n\n" +
+                            "Выберите быстрый уровень (1 нажатие) или скопируйте команду:\n" +
+                            "<pre>/alert %s %s</pre>",
+                            escapeHtml(name), ticker,
+                            formatMoney(curPrice), curStr,
+                            ticker, pPlus5.toPlainString()
+                    );
+                    sendMessage(chatId, msg, kb);
+                })
+                .subscribe(null, e -> {
+                    log.error("Failed to prompt alert for ticker {}: {}", ticker, e.getMessage());
+                    sendMessage(chatId, "Для установки лимита отправьте команду:\n<pre>/alert " + ticker + " ЦЕНА</pre>", null);
+                });
     }
 
     private void sendWelcome(Long chatId, String name) {
@@ -369,8 +449,22 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 b.getCode()
                         ));
                     }
-                    sb.append("💡 <i>При покупке со скидкой вы платите меньше номинала, а при погашении эмитент возвращает полные 100%.</i>");
-                    sendMessage(chatId, sb.toString(), null);
+                    sb.append("💡 <i>При покупке со скидкой эмитент возвращает 100%. Нажмите кнопку ниже для моментального расчета или просмотра:</i>");
+
+                    InlineKeyboardMarkup.InlineKeyboardMarkupBuilder kbBuilder = InlineKeyboardMarkup.builder();
+                    int buttonLimit = Math.min(bonds.size(), 4);
+                    for (int i = 0; i < buttonLimit; i++) {
+                        String code = bonds.get(i).getCode();
+                        kbBuilder.keyboardRow(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("🧮 " + code + " (500k ₸)").callbackData("CALC_" + code + "_500000").build(),
+                                InlineKeyboardButton.builder().text("📄 " + code).callbackData("BOND_" + code).build()
+                        ));
+                    }
+                    kbBuilder.keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать любую облигацию").switchInlineQueryCurrentChat("").build()
+                    ));
+
+                    sendMessage(chatId, sb.toString(), kbBuilder.build());
                 })
                 .subscribe();
     }
@@ -402,7 +496,22 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 b.getCode()
                         ));
                     }
-                    sendMessage(chatId, sb.toString(), null);
+                    sb.append("💡 <i>Нажмите кнопку ниже, чтобы открыть паспорт бумаги или рассчитать доход в 1 нажатие:</i>");
+
+                    InlineKeyboardMarkup.InlineKeyboardMarkupBuilder kbBuilder = InlineKeyboardMarkup.builder();
+                    int buttonLimit = Math.min(bonds.size(), 4);
+                    for (int i = 0; i < buttonLimit; i++) {
+                        String code = bonds.get(i).getCode();
+                        kbBuilder.keyboardRow(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("📄 " + code).callbackData("BOND_" + code).build(),
+                                InlineKeyboardButton.builder().text("🧮 Расчет " + code).callbackData("CALC_" + code + "_500000").build()
+                        ));
+                    }
+                    kbBuilder.keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Поиск облигаций").switchInlineQueryCurrentChat("").build()
+                    ));
+
+                    sendMessage(chatId, sb.toString(), kbBuilder.build());
                 })
                 .subscribe();
     }
@@ -431,8 +540,25 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 formatMoney(s.getVolumeKzt())
                         ));
                     }
-                    sb.append("💡 <i>Чтобы отслеживать конкретную акцию, отправьте:</i> <code>/track ТИКЕР</code>");
-                    sendMessage(chatId, sb.toString(), null);
+                    sb.append("💡 <i>Нажмите на акцию ниже для подробностей, алертов и теханализа:</i>");
+
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 KSPI").callbackData("STOCK_KSPI").build(),
+                                    InlineKeyboardButton.builder().text("📊 HSBK").callbackData("STOCK_HSBK").build(),
+                                    InlineKeyboardButton.builder().text("📊 KZAP").callbackData("STOCK_KZAP").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 AIRA").callbackData("STOCK_AIRA").build(),
+                                    InlineKeyboardButton.builder().text("📊 KMGZ").callbackData("STOCK_KMGZ").build(),
+                                    InlineKeyboardButton.builder().text("📊 CCBN").callbackData("STOCK_CCBN").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔍 Поиск любой акции").switchInlineQueryCurrentChat("").build()
+                            ))
+                            .build();
+
+                    sendMessage(chatId, sb.toString(), kb);
                 })
                 .subscribe();
     }
@@ -554,10 +680,17 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (parts.length < 2) {
             InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                     .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию").switchInlineQueryCurrentChat("").build()
+                            InlineKeyboardButton.builder().text("📄 BIDBb5").callbackData("BOND_BIDBb5").build(),
+                            InlineKeyboardButton.builder().text("📄 KZTKb3").callbackData("BOND_KZTKb3").build(),
+                            InlineKeyboardButton.builder().text("📄 TEBNb10").callbackData("BOND_TEBNb10").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию из поиска").switchInlineQueryCurrentChat("").build()
                     ))
                     .build();
-            sendMessage(chatId, "Укажите тикер облигации, например:\n<code>/bond BIDBb5</code> или <code>/bond KZTKb3</code>\n\n<i>Или выберите через быстрый поиск:</i>", kb);
+            sendMessage(chatId, "📑 <b>Карточка и паспорт облигации</b>\n\n" +
+                    "Выберите облигацию ниже (1 нажатие) или скопируйте команду:\n" +
+                    "<pre>/bond BIDBb5</pre>", kb);
             return;
         }
         handleQuickTickerLookup(chatId, parts[1].toUpperCase());
@@ -568,10 +701,22 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (parts.length < 2) {
             InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                     .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать акцию").switchInlineQueryCurrentChat("").build()
+                            InlineKeyboardButton.builder().text("📊 KSPI").callbackData("STOCK_KSPI").build(),
+                            InlineKeyboardButton.builder().text("📊 HSBK").callbackData("STOCK_HSBK").build(),
+                            InlineKeyboardButton.builder().text("📊 KZAP").callbackData("STOCK_KZAP").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📊 AIRA").callbackData("STOCK_AIRA").build(),
+                            InlineKeyboardButton.builder().text("📊 KMGZ").callbackData("STOCK_KMGZ").build(),
+                            InlineKeyboardButton.builder().text("📊 CCBN").callbackData("STOCK_CCBN").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать акцию из поиска").switchInlineQueryCurrentChat("").build()
                     ))
                     .build();
-            sendMessage(chatId, "Укажите тикер акции, например:\n<code>/stock KSPI</code> или <code>/stock HSBK</code>\n\n<i>Или выберите через быстрый поиск:</i>", kb);
+            sendMessage(chatId, "📊 <b>Карточка акции</b>\n\n" +
+                    "Выберите акцию ниже (1 нажатие) или скопируйте команду:\n" +
+                    "<pre>/stock KSPI</pre>", kb);
             return;
         }
         String ticker = parts[1].toUpperCase();
@@ -597,7 +742,20 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             s.getDealCount() != null ? s.getDealCount() : 0,
                             s.getCode()
                     );
-                    sendMessage(chatId, msg, null);
+                    InlineKeyboardMarkup stockKb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📈 Теханализ RSI/SMA").callbackData("TA_" + s.getCode()).build(),
+                                    InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + s.getCode()).build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("⚖️ KASE vs AIX").callbackData("COMPARE_" + s.getCode()).build(),
+                                    InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + s.getCode()).build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🌐 Открыть на KASE").url("https://kase.kz/ru/shares/show/" + s.getCode() + "/").build()
+                            ))
+                            .build();
+                    sendMessage(chatId, msg, stockKb);
                 })
                 .subscribe();
     }
@@ -611,6 +769,19 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 .doOnSuccess(stocks -> {
                                     if (stocks != null && !stocks.isEmpty()) {
                                         StockItemDto s = stocks.get(0);
+                                        InlineKeyboardMarkup stockKb = InlineKeyboardMarkup.builder()
+                                                .keyboardRow(new InlineKeyboardRow(
+                                                        InlineKeyboardButton.builder().text("📈 Теханализ RSI/SMA").callbackData("TA_" + s.getCode()).build(),
+                                                        InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + s.getCode()).build()
+                                                ))
+                                                .keyboardRow(new InlineKeyboardRow(
+                                                        InlineKeyboardButton.builder().text("⚖️ Сравнить KASE/AIX").callbackData("COMPARE_" + s.getCode()).build(),
+                                                        InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + s.getCode()).build()
+                                                ))
+                                                .keyboardRow(new InlineKeyboardRow(
+                                                        InlineKeyboardButton.builder().text("🌐 Смотреть на KASE").url("https://kase.kz/ru/shares/show/" + s.getCode() + "/").build()
+                                                ))
+                                                .build();
                                         sendMessage(chatId, String.format(
                                                 "📊 <b>Акция %s</b> (<code>%s</code>)\n" +
                                                 "• Цена: <b>%s %s</b>\n" +
@@ -620,7 +791,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                                 formatMoney(s.getPrice()), s.getCurrency(),
                                                 formatMoney(s.getVolumeKzt()),
                                                 s.getCode()
-                                        ), null);
+                                        ), stockKb);
                                     } else {
                                         aixService.getInstruments(null, null, ticker, 5)
                                                 .doOnSuccess(aixList -> {
@@ -628,6 +799,16 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                                         kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto inst = aixList.get(0);
                                                         BigDecimal pr = inst.getLastTrade() != null ? inst.getLastTrade() : inst.getReferencePrice();
                                                         String cur = inst.getCurrency() != null ? inst.getCurrency() : "";
+                                                        InlineKeyboardMarkup aixKb = InlineKeyboardMarkup.builder()
+                                                                .keyboardRow(new InlineKeyboardRow(
+                                                                        InlineKeyboardButton.builder().text("📊 Стакан котировок AIX").callbackData("DEPTH_" + inst.getSecCode()).build(),
+                                                                        InlineKeyboardButton.builder().text("⚖️ Сравнить с KASE").callbackData("COMPARE_" + inst.getSecCode()).build()
+                                                                ))
+                                                                .keyboardRow(new InlineKeyboardRow(
+                                                                        InlineKeyboardButton.builder().text("📈 Теханализ").callbackData("TA_" + inst.getSecCode()).build(),
+                                                                        InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + inst.getSecCode()).build()
+                                                                ))
+                                                                .build();
                                                         sendMessage(chatId, String.format(
                                                                 "🏛️ <b>Инструмент AIX: %s</b> (<code>%s</code>)\n" +
                                                                 "• Класс: <b>%s</b>\n" +
@@ -644,7 +825,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                                                 inst.getIsin() != null ? inst.getIsin() : "-",
                                                                 inst.getSecCode(),
                                                                 inst.getSecCode()
-                                                        ), null);
+                                                        ), aixKb);
                                                     } else {
                                                         sendMessage(chatId, "Инструмент с тикером <code>" + ticker + "</code> не найден ни на KASE, ни на AIX.", null);
                                                     }
@@ -686,7 +867,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "<b>Доходность к погашению (YTM):</b> <b>%.2f%%</b>\n" +
                             "<b>Дата погашения:</b> %s (осталось: %s)\n" +
                             "<b>Объем торгов сегодня:</b> %s ₸\n\n" +
-                            "🧮 <i>Рассчитать свой доход:</i> <code>/calc %s 500000</code>\n" +
+                            "🧮 <i>Быстрый расчет дохода:</i> нажмите кнопку ниже или скопируйте:\n" +
+                            "<pre>/calc %s 500000</pre>\n" +
                             "<a href=\"https://kase.kz/ru/bonds/show/%s/\">Открыть страницу на KASE</a>",
                             escapeHtml(name),
                             escapeHtml(issuer),
@@ -701,7 +883,21 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             ticker,
                             ticker
                     );
-                    sendMessage(chatId, msg, null);
+                    InlineKeyboardMarkup bondKb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🧮 Рассчитать доход на 500 000 ₸").callbackData("CALC_" + ticker + "_500000").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("💰 100k ₸").callbackData("CALC_" + ticker + "_100000").build(),
+                                    InlineKeyboardButton.builder().text("💰 1 млн ₸").callbackData("CALC_" + ticker + "_1000000").build(),
+                                    InlineKeyboardButton.builder().text("💰 5 млн ₸").callbackData("CALC_" + ticker + "_5000000").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("⭐ В избранное").callbackData("TRACK_" + ticker).build(),
+                                    InlineKeyboardButton.builder().text("🌐 Страница KASE").url("https://kase.kz/ru/bonds/show/" + ticker + "/").build()
+                            ))
+                            .build();
+                    sendMessage(chatId, msg, bondKb);
                 })
                 .subscribe();
     }
@@ -711,14 +907,18 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (parts.length < 3) {
             InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                     .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию").switchInlineQueryCurrentChat("").build()
+                            InlineKeyboardButton.builder().text("🧮 BIDBb5 (500k ₸)").callbackData("CALC_BIDBb5_500000").build(),
+                            InlineKeyboardButton.builder().text("🧮 TEBNb10 (500k ₸)").callbackData("CALC_TEBNb10_500000").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию из поиска").switchInlineQueryCurrentChat("").build()
                     ))
                     .build();
             sendMessage(chatId, "🧮 <b>Калькулятор доходности облигаций</b>\n\n" +
-                    "Формат команды:\n<code>/calc ТИКЕР СУММА</code>\n\n" +
-                    "<b>Пример:</b>\n" +
-                    "<code>/calc BIDBb5 500000</code> — расчет дохода от вложения 500 000 ₸ в облигацию BI Group.\n\n" +
-                    "<i>Или найдите нужную облигацию через быстрый поиск ниже:</i>", kb);
+                    "Формат команды:\n<pre>/calc ТИКЕР СУММА</pre>\n\n" +
+                    "<b>Пример (нажмите кнопку ниже или скопируйте):</b>\n" +
+                    "<pre>/calc BIDBb5 500000</pre>\n\n" +
+                    "<i>Или нажмите на одну из бумаг ниже для мгновенного расчета:</i>", kb);
             return;
         }
 
@@ -808,7 +1008,21 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             b.getEffectiveYield() != null ? b.getEffectiveYield().doubleValue() : couponRateVal,
                             formatDuration(dtm)
                     );
-                    sendMessage(chatId, res, null);
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("💰 100 000 ₸").callbackData("CALC_" + rawTicker + "_100000").build(),
+                                    InlineKeyboardButton.builder().text("💰 500 000 ₸").callbackData("CALC_" + rawTicker + "_500000").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("💰 1 000 000 ₸").callbackData("CALC_" + rawTicker + "_1000000").build(),
+                                    InlineKeyboardButton.builder().text("💰 5 000 000 ₸").callbackData("CALC_" + rawTicker + "_5000000").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📄 Паспорт облигации").callbackData("BOND_" + rawTicker).build(),
+                                    InlineKeyboardButton.builder().text("🔍 Другая бумага").switchInlineQueryCurrentChat("").build()
+                            ))
+                            .build();
+                    sendMessage(chatId, res, kb);
                 })
                 .subscribe();
     }
@@ -858,9 +1072,14 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     String wl = (sub != null && sub.getWatchlist() != null && !sub.getWatchlist().isBlank())
                             ? sub.getWatchlist()
                             : "KSPI,HSBK,KZAP,AIRA,KMGZ";
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔍 Добавить акцию из поиска").switchInlineQueryCurrentChat("").build()
+                            ))
+                            .build();
                     sendMessage(chatId, "📋 <b>Ваш список отслеживаемых акций:</b>\n<code>" + wl + "</code>\n\n" +
                             "• Добавить: <code>/track ТИКЕР</code>\n" +
-                            "• Удалить: <code>/untrack ТИКЕР</code>", null);
+                            "• Удалить: <code>/untrack ТИКЕР</code>", kb);
                 })
                 .subscribe();
     }
@@ -927,9 +1146,24 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     sb.append("\n<b>Полезные команды AIX:</b>\n");
                     sb.append("• <code>/depth KAP</code> — биржевой стакан (Level-2 Order Book)\n");
                     sb.append("• <code>/compare KZAP</code> — арбитраж с KASE (разница цен)\n");
-                    sb.append("• <code>/arbitrage</code> — все возможности арбитража KASE ⇄ AIX\n");
+                    sb.append("• <code>/arbitrage</code> — все возможности арбитража KASE ⇄ AIX\n\n");
+                    sb.append("💡 <i>Нажмите кнопку ниже для быстрого перехода:</i>");
 
-                    sendMessage(chatId, sb.toString(), null);
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("⚖️ Арбитраж KASE ⇄ AIX").callbackData("ARBITRAGE").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 Стакан KAP").callbackData("DEPTH_KAP").build(),
+                                    InlineKeyboardButton.builder().text("📊 Стакан KSPI").callbackData("DEPTH_KSPI").build(),
+                                    InlineKeyboardButton.builder().text("📊 Стакан AIRA").callbackData("DEPTH_AIRA").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔍 Поиск по AIX").switchInlineQueryCurrentChat("").build()
+                            ))
+                            .build();
+
+                    sendMessage(chatId, sb.toString(), kb);
                 })
                 .subscribe();
     }
@@ -939,16 +1173,19 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (parts.length < 2) {
             InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                     .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать бумагу AIX").switchInlineQueryCurrentChat("").build()
+                            InlineKeyboardButton.builder().text("📊 Стакан KAP").callbackData("DEPTH_KAP").build(),
+                            InlineKeyboardButton.builder().text("📊 Стакан KSPI").callbackData("DEPTH_KSPI").build(),
+                            InlineKeyboardButton.builder().text("📊 Стакан AIRA").callbackData("DEPTH_AIRA").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать другую бумагу AIX").switchInlineQueryCurrentChat("").build()
                     ))
                     .build();
             sendMessage(chatId, "📊 <b>Биржевой стакан котировок AIX (Level-2)</b>\n\n" +
-                    "Формат команды: <code>/depth СИМВОЛ</code>\n" +
-                    "Примеры:\n" +
-                    "• <code>/depth KAP</code> (Казатомпром)\n" +
-                    "• <code>/depth KSPI</code> (Kaspi.kz)\n" +
-                    "• <code>/depth AIRA</code> (Air Astana)\n\n" +
-                    "<i>Или выберите инструмент через быстрый поиск:</i>", kb);
+                    "Формат команды:\n<pre>/depth СИМВОЛ</pre>\n\n" +
+                    "Примеры (нажмите кнопку ниже или скопируйте):\n" +
+                    "<pre>/depth KAP</pre>\n\n" +
+                    "<i>Или выберите инструмент в 1 нажатие ниже:</i>", kb);
             return;
         }
         String symbol = parts[1].toUpperCase();
@@ -1050,8 +1287,19 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         sb.append("\n");
                     }
 
-                    sb.append("ℹ️ <i>Для просмотра стакана котировок введите:</i> <code>/depth ТИКЕР</code>");
-                    sendMessage(chatId, sb.toString(), null);
+                    sb.append("💡 <i>Нажмите кнопку ниже для просмотра биржевого стакана AIX:</i>");
+
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 Стакан KAP").callbackData("DEPTH_KAP").build(),
+                                    InlineKeyboardButton.builder().text("📊 Стакан KSPI").callbackData("DEPTH_KSPI").build(),
+                                    InlineKeyboardButton.builder().text("📊 Стакан AIRA").callbackData("DEPTH_AIRA").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔍 Выбрать бумагу из поиска").switchInlineQueryCurrentChat("").build()
+                            ))
+                            .build();
+                    sendMessage(chatId, sb.toString(), kb);
                 })
                 .subscribe();
     }
@@ -1082,7 +1330,16 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 escapeHtml(arb.getRecommendation() != null ? arb.getRecommendation() : "Цены на обеих площадках практически равны"),
                 arb.getAixCode()
         );
-        sendMessage(chatId, msg, null);
+        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("📊 Стакан AIX (" + arb.getAixCode() + ")").callbackData("DEPTH_" + arb.getAixCode()).build(),
+                        InlineKeyboardButton.builder().text("📈 Теханализ KASE").callbackData("TA_" + arb.getKaseCode()).build()
+                ))
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("⚖️ Все пары арбитража").callbackData("ARBITRAGE").build()
+                ))
+                .build();
+        sendMessage(chatId, msg, kb);
     }
 
     private void sendHelp(Long chatId) {
@@ -1275,15 +1532,23 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (parts.length < 2) {
             InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                     .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать акцию").switchInlineQueryCurrentChat("").build()
+                            InlineKeyboardButton.builder().text("📈 KSPI").callbackData("TA_KSPI").build(),
+                            InlineKeyboardButton.builder().text("📈 AIRA").callbackData("TA_AIRA").build(),
+                            InlineKeyboardButton.builder().text("📈 HSBK").callbackData("TA_HSBK").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📈 KAP (AIX)").callbackData("TA_KAP").build(),
+                            InlineKeyboardButton.builder().text("📈 KZAP").callbackData("TA_KZAP").build(),
+                            InlineKeyboardButton.builder().text("📈 KMGZ").callbackData("TA_KMGZ").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать акцию из поиска").switchInlineQueryCurrentChat("").build()
                     ))
                     .build();
             sendMessage(chatId, "💡 <b>Технический анализ (RSI 14, SMA 20, уровни):</b>\n\n" +
-                    "Введите тикер акции для анализа, например:\n" +
-                    "• <code>/ta KSPI</code>\n" +
-                    "• <code>/ta AIRA</code>\n" +
-                    "• <code>/ta KAP</code> (AIX)\n\n" +
-                    "<i>Или выберите акцию через быстрый поиск:</i>", kb);
+                    "Выберите акцию ниже (1 нажатие) или скопируйте команду:\n" +
+                    "<pre>/ta KSPI</pre>\n\n" +
+                    "<i>Или напишите в чат: «Анализ AIRA» или «RSI для HSBK»</i>", kb);
             return;
         }
         sendTechnicalAnalysis(chatId, parts[1].trim().toUpperCase());
@@ -1336,8 +1601,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "• <b>Уровень поддержки:</b> %s %s\n" +
                             "• <b>Уровень сопротивления:</b> %s %s\n\n" +
                             "💡 <b>Оценка AI-ассистента:</b>\n%s\n\n" +
-                            "🔔 <i>Поставить лимит-уведомление на цену:</i>\n" +
-                            "<code>/alert %s %s</code>",
+                            "🔔 <i>Быстрый лимит цены:</i> нажмите кнопку ниже или скопируйте:\n" +
+                            "<pre>/alert %s %s</pre>",
                             escapeHtml(ta.getName()),
                             ta.getTicker(),
                             ta.getExchange(),
@@ -1388,7 +1653,14 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (ticker != null) {
             sendTechnicalAnalysis(chatId, ticker);
         } else {
-            sendMessage(chatId, "💡 Чтобы получить технический анализ, укажите тикер акции, например:\n<code>/ta KSPI</code>\nили напишите <i>«Анализ AIRA»</i> или <i>«RSI для HSBK»</i>.", null);
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📈 KSPI").callbackData("TA_KSPI").build(),
+                            InlineKeyboardButton.builder().text("📈 AIRA").callbackData("TA_AIRA").build(),
+                            InlineKeyboardButton.builder().text("📈 HSBK").callbackData("TA_HSBK").build()
+                    ))
+                    .build();
+            sendMessage(chatId, "💡 Чтобы получить технический анализ, выберите акцию ниже или скопируйте команду:\n<pre>/ta KSPI</pre>", kb);
         }
     }
 
@@ -1418,7 +1690,13 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         if (parts.length < 3) {
             InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                     .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать тикер для алерта").switchInlineQueryCurrentChat("").build()
+                            InlineKeyboardButton.builder().text("🔔 Лимит KSPI").callbackData("SET_ALERT_KSPI").build(),
+                            InlineKeyboardButton.builder().text("🔔 Лимит HSBK").callbackData("SET_ALERT_HSBK").build(),
+                            InlineKeyboardButton.builder().text("🔔 Лимит AIRA").callbackData("SET_ALERT_AIRA").build()
+                    ))
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📋 Мои алерты").callbackData("MY_ALERTS").build(),
+                            InlineKeyboardButton.builder().text("🔍 Поиск тикера").switchInlineQueryCurrentChat("").build()
                     ))
                     .build();
             sendMessage(chatId, """
@@ -1427,16 +1705,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     Бот пришлет мгновенное push-уведомление, когда цена акции на бирже достигнет вашей цели. <b>Функция 100% бесплатна!</b>
 
                     Формат:
-                    <code>/alert &lt;ТИКЕР&gt; &lt;ЦЕНА&gt;</code>
+                    <pre>/alert ТИКЕР ЦЕНА</pre>
 
-                    Примеры:
-                    • <code>/alert KSPI 55000</code> — уведомить при росте Kaspi до 55 000 ₸
-                    • <code>/alert HSBK 370</code> — уведомить при падении Halyk до 370 ₸
-                    • <code>/alert AIRA 700</code> — уведомить при росте Air Astana до 700 ₸
+                    Пример (нажмите кнопку ниже или скопируйте):
+                    <pre>/alert KSPI 55000</pre>
 
-                    Ваши активные алерты: <code>/my_alerts</code>
-
-                    <i>Или выберите тикер через быстрый поиск:</i>
+                    <i>Или выберите акцию ниже для установки лимита в 1 нажатие:</i>
                     """, kb);
             return;
         }
@@ -1528,16 +1802,22 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 .collectList()
                 .doOnSuccess(alerts -> {
                     if (alerts == null || alerts.isEmpty()) {
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("🔔 Лимит KSPI").callbackData("SET_ALERT_KSPI").build(),
+                                        InlineKeyboardButton.builder().text("🔔 Лимит HSBK").callbackData("SET_ALERT_HSBK").build(),
+                                        InlineKeyboardButton.builder().text("🔔 Лимит AIRA").callbackData("SET_ALERT_AIRA").build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("🔍 Поиск тикера").switchInlineQueryCurrentChat("").build()
+                                ))
+                                .build();
                         sendMessage(chatId, """
                                 🔔 <b>У вас нет активных лимит-уведомлений.</b>
 
-                                Чтобы установить алерт на достижение цены:
-                                <code>/alert &lt;ТИКЕР&gt; &lt;ЦЕНА&gt;</code>
-
-                                Например:
-                                • <code>/alert KSPI 55000</code>
-                                • <code>/alert HSBK 370</code>
-                                """, null);
+                                Чтобы установить алерт, выберите акцию ниже или скопируйте команду:
+                                <pre>/alert KSPI 55000</pre>
+                                """, kb);
                         return;
                     }
 
@@ -1580,16 +1860,27 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         BigDecimal curTh = (sub != null && sub.getPriceChangeThreshold() != null)
                                 ? sub.getPriceChangeThreshold()
                                 : BigDecimal.valueOf(3.0);
+
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("±1.5% (активный)").callbackData("SET_THRESH_1.5").build(),
+                                        InlineKeyboardButton.builder().text("±2.5%").callbackData("SET_THRESH_2.5").build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("±3.0% (стандарт)").callbackData("SET_THRESH_3.0").build(),
+                                        InlineKeyboardButton.builder().text("±5.0% (сильный)").callbackData("SET_THRESH_5.0").build()
+                                ))
+                                .build();
+
                         sendMessage(chatId, String.format(
                                 "⚙️ <b>Настройка порога движения цен акций:</b>\n\n" +
                                 "Текущий порог: <b>±%.1f%%</b>\n\n" +
                                 "Бот присылает уведомления обо всех акциях KASE, цена которых за день изменилась сильнее этого значения.\n\n" +
-                                "Чтобы изменить порог, введите команду со значением:\n" +
-                                "• <code>/threshold 2.5</code> (более чувствительный)\n" +
-                                "• <code>/threshold 5.0</code> (только сильные движения)\n\n" +
-                                "💡 <i>У других ботов эта функция требует платной подписки (399 ₸/мес), а у нас — 100% бесплатно!</i>",
+                                "Выберите порог в 1 нажатие ниже или скопируйте команду:\n" +
+                                "<pre>/threshold 2.5</pre>\n\n" +
+                                "💡 <i>У других ботов эта функция требует платной подписки (399 ₸/мес), а у нас — 100%% бесплатно!</i>",
                                 curTh.doubleValue()
-                        ), null);
+                        ), kb);
                     })
                     .subscribe();
             return;
