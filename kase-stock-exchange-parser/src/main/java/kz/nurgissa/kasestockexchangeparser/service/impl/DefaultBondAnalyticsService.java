@@ -614,7 +614,7 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
         if (code == null || code.isBlank()) {
             return Mono.empty();
         }
-        return securityInstrumentRepository.findByCode(code.trim().toUpperCase())
+        return securityInstrumentRepository.findByCode(code.trim())
                 .flatMap(instr -> getInstrumentDetail(instr.getId()));
     }
 

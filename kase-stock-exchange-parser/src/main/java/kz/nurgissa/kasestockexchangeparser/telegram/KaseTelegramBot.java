@@ -605,19 +605,19 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             return;
         }
 
-        String ticker = parts[1].toUpperCase();
+        String rawTicker = parts[1].trim();
         double amount;
         try {
             amount = Double.parseDouble(parts[2].replace(",", ".").replace(" ", ""));
         } catch (Exception e) {
-            sendMessage(chatId, "Сумма введена некорректно. Пример: <code>/calc " + ticker + " 500000</code>", null);
+            sendMessage(chatId, "Сумма введена некорректно. Пример: <code>/calc " + rawTicker + " 500000</code>", null);
             return;
         }
 
-        analyticsService.getInstrumentDetailByCode(ticker)
+        analyticsService.getInstrumentDetailByCode(rawTicker)
                 .doOnSuccess(b -> {
                     if (b == null) {
-                        sendMessage(chatId, "Облигация <code>" + ticker + "</code> не найдена.", null);
+                        sendMessage(chatId, "Облигация <code>" + rawTicker + "</code> не найдена.", null);
                         return;
                     }
 
@@ -658,7 +658,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     String name = (b.getInstrument() != null && b.getInstrument().getOrgShortNameRu() != null)
                             ? b.getInstrument().getOrgShortNameRu()
-                            : (b.getInstrument() != null ? b.getInstrument().getOrgNameRu() : ticker);
+                            : (b.getInstrument() != null ? b.getInstrument().getOrgNameRu() : rawTicker);
                     String cur = b.getResolvedCurrency() != null ? b.getResolvedCurrency() : "KZT";
 
                     String res = String.format(
@@ -677,7 +677,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "• Чистая прибыль: <b>+%s %s</b> (<b>+%.1f%%</b> к вложениям)\n" +
                             "• Доходность годовых (YTM): <b>%.2f%%</b>\n" +
                             "• Срок до возврата капитала: %s",
-                            escapeHtml(name), ticker,
+                            escapeHtml(name), (b.getInstrument() != null && b.getInstrument().getCode() != null ? b.getInstrument().getCode() : rawTicker),
                             formatMoney(BigDecimal.valueOf(amount)), cur,
                             count, formatMoney(pricePerBond), cur,
                             formatMoney(totalInvested), cur,
