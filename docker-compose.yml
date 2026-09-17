@@ -40,6 +40,25 @@ services:
       TELEGRAM_BOT_ENABLED: "${TELEGRAM_BOT_ENABLED:-true}"
     ports:
       - "8080:8080"
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: kase_watchtower
+    restart: unless-stopped
+    environment:
+      # Удалять старые образы после обновления (экономия места на диске)
+      WATCHTOWER_CLEANUP: "true"
+      # Обновлять ТОЛЬКО контейнеры с меткой com.centurylinklabs.watchtower.enable=true (базу данных postgres не трогаем!)
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # Интервал проверки новых образов в секундах (120 сек = 2 минуты)
+      WATCHTOWER_POLL_INTERVAL: "120"
+      WATCHTOWER_TIMEOUT: "30s"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Если реестр GHCR приватный, раскомментируйте строку ниже после `docker login ghcr.io`:
+      # - ~/.docker/config.json:/config.json:ro
 
 volumes:
   kase_pgdata:
