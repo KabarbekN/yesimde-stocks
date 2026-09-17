@@ -25,7 +25,7 @@
 | `SERVER_DEPLOY_PATH` | Папка с проектом на сервере | `/opt/yesimde-stocks` |
 
 > [!NOTE]
-> Если секрет `SERVER_HOST` не добавлен, CI-тесты и сборка Docker-образа в `ghcr.io` всё равно успешно выполняются, а шаг SSH-деплоя безопасно пропускается.
+> В репозиторий уже встроен сервис **Watchtower** в `docker-compose.yml`. Это означает, что вам даже **не обязательно настраивать SSH-секреты**! Сервер сам будет автоматически опрашивать реестр `ghcr.io` каждые 2 минуты, и как только GitHub Actions соберет новый образ, сервер мгновенно и бесшовно обновит приложение.
 
 ---
 
@@ -111,6 +111,9 @@ docker compose up -d
 ```bash
 # Логи приложения (Spring Boot + Telegram-бот)
 docker compose logs -f app
+
+# Логи Watchtower (проверка авто-обновлений)
+docker compose logs -f watchtower
 
 # Логи базы данных PostgreSQL
 docker compose logs -f postgres
