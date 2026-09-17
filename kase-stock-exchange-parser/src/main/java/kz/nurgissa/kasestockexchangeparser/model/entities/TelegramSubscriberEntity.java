@@ -44,6 +44,10 @@ public class TelegramSubscriberEntity implements Persistable<Long> {
     @Column("watchlist")
     private String watchlist;
 
+    @Column("price_change_threshold")
+    private java.math.BigDecimal priceChangeThreshold;
+
+
     @Column("created_at")
     private LocalDateTime createdAt;
 

@@ -19,7 +19,9 @@ import java.math.BigDecimal;
 public class MarketAlertDetectorScheduler {
 
     private final BondAnalyticsService analyticsService;
+    private final kz.nurgissa.kasestockexchangeparser.service.AixService aixService;
     private final TelegramAlertDispatcherService alertDispatcherService;
+
 
     /**
      * Periodic scanner for discounts, significant stock moves, and institutional deals.
@@ -62,7 +64,33 @@ public class MarketAlertDetectorScheduler {
                     return Flux.empty();
                 })
                 .subscribe();
+
+        // 4. Scan active user price target limit alerts (KASE stocks)
+        analyticsService.getTopStocks(null)
+                .flatMapMany(Flux::fromIterable)
+                .filter(s -> s.getPrice() != null)
+                .flatMap(s -> alertDispatcherService.checkAndDispatchPriceTargets(s.getCode(), s.getPrice()))
+                .onErrorResume(e -> {
+                    log.warn("Error checking KASE price target alerts: {}", e.getMessage());
+                    return Flux.empty();
+                })
+                .subscribe();
+
+        // 5. Scan active user price target limit alerts (AIX instruments)
+        aixService.getInstruments(null, null, null, 150)
+                .flatMapMany(Flux::fromIterable)
+                .filter(a -> a.getLastTrade() != null || a.getReferencePrice() != null)
+                .flatMap(a -> {
+                    BigDecimal price = a.getLastTrade() != null ? a.getLastTrade() : a.getReferencePrice();
+                    return alertDispatcherService.checkAndDispatchPriceTargets(a.getSecCode(), price);
+                })
+                .onErrorResume(e -> {
+                    log.warn("Error checking AIX price target alerts: {}", e.getMessage());
+                    return Flux.empty();
+                })
+                .subscribe();
     }
+
 
     /**
      * Weekly coupon calendar broadcast on Monday at 09:00 AM Almaty time.

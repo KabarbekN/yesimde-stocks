@@ -21,5 +21,9 @@ databaseChangeLog:
   - include:
       file: 07-create-aix-tables.sql
       relativeToChangelogFile: true
+  - include:
+      file: 08-create-price-alert-target.sql
+      relativeToChangelogFile: true
+
 
 

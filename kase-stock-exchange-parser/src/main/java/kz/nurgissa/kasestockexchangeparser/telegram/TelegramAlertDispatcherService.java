@@ -3,9 +3,11 @@ package kz.nurgissa.kasestockexchangeparser.telegram;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.entities.AlertCooldownEntity;
+import kz.nurgissa.kasestockexchangeparser.model.entities.PriceAlertTargetEntity;
 import kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity;
 import kz.nurgissa.kasestockexchangeparser.model.entities.TickerEntity;
 import kz.nurgissa.kasestockexchangeparser.repositories.AlertCooldownRepository;
+import kz.nurgissa.kasestockexchangeparser.repositories.PriceAlertTargetRepository;
 import kz.nurgissa.kasestockexchangeparser.repositories.TelegramSubscriberRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,17 +32,20 @@ public class TelegramAlertDispatcherService {
 
     private final TelegramSubscriberRepository subscriberRepository;
     private final AlertCooldownRepository cooldownRepository;
+    private final PriceAlertTargetRepository priceAlertTargetRepository;
     private final TelegramClient telegramClient;
     private final boolean enabled;
 
     public TelegramAlertDispatcherService(
             TelegramSubscriberRepository subscriberRepository,
             AlertCooldownRepository cooldownRepository,
+            PriceAlertTargetRepository priceAlertTargetRepository,
             @Value("${telegram.bot.token:}") String botToken,
             @Value("${telegram.bot.enabled:false}") boolean enabled
     ) {
         this.subscriberRepository = subscriberRepository;
         this.cooldownRepository = cooldownRepository;
+        this.priceAlertTargetRepository = priceAlertTargetRepository;
         this.enabled = enabled && botToken != null && !botToken.isBlank();
         this.telegramClient = this.enabled ? new OkHttpTelegramClient(botToken) : null;
     }
@@ -159,7 +164,7 @@ public class TelegramAlertDispatcherService {
     }
 
     /**
-     * Alert for major stock price movements (>= 3% daily change).
+     * Alert for major stock price movements (respecting each user's custom threshold, default >= 3%).
      */
     public Mono<Void> broadcastStockMoveAlert(StockItemDto stock) {
         if (!isEnabled() || stock == null || stock.getCode() == null || stock.getChangePercent() == null) {
@@ -168,7 +173,7 @@ public class TelegramAlertDispatcherService {
 
         String code = stock.getCode();
         BigDecimal change = stock.getChangePercent().abs();
-        if (change.compareTo(BigDecimal.valueOf(3.0)) < 0) {
+        if (change.compareTo(BigDecimal.valueOf(1.0)) < 0) {
             return Mono.empty();
         }
 
@@ -196,6 +201,12 @@ public class TelegramAlertDispatcherService {
                     InlineKeyboardMarkup keyboard = buildStockInlineKeyboard(code);
                     return subscriberRepository.findAllBySubStocksTrue()
                             .doOnNext(sub -> {
+                                BigDecimal userThreshold = (sub.getPriceChangeThreshold() != null && sub.getPriceChangeThreshold().compareTo(BigDecimal.ZERO) > 0)
+                                        ? sub.getPriceChangeThreshold()
+                                        : BigDecimal.valueOf(3.0);
+                                if (change.compareTo(userThreshold) < 0) {
+                                    return;
+                                }
                                 // If subscriber has specific watchlist, check if subscribed
                                 if (sub.getWatchlist() == null || sub.getWatchlist().isBlank()
                                         || sub.getWatchlist().toUpperCase().contains(code.toUpperCase())) {
@@ -205,6 +216,40 @@ public class TelegramAlertDispatcherService {
                             .then();
                 });
     }
+
+    /**
+     * Check and trigger price target limit alerts set by users.
+     */
+    public Mono<Void> checkAndDispatchPriceTargets(String ticker, BigDecimal currentPrice) {
+        if (!isEnabled() || ticker == null || currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return Mono.empty();
+        }
+
+        return priceAlertTargetRepository.findAllActiveByTicker(ticker.trim())
+                .flatMap(alert -> {
+                    boolean triggered = false;
+                    if ("ABOVE".equalsIgnoreCase(alert.getDirection()) && currentPrice.compareTo(alert.getTargetPrice()) >= 0) {
+                        triggered = true;
+                    } else if ("BELOW".equalsIgnoreCase(alert.getDirection()) && currentPrice.compareTo(alert.getTargetPrice()) <= 0) {
+                        triggered = true;
+                    }
+
+                    if (triggered) {
+                        alert.setIsTriggered(true);
+                        alert.setTriggeredAt(LocalDateTime.now());
+                        return priceAlertTargetRepository.save(alert)
+                                .doOnSuccess(saved -> {
+                                    String msg = buildPriceAlertTriggeredMessage(saved, currentPrice);
+                                    InlineKeyboardMarkup keyboard = buildTargetTriggeredKeyboard(saved.getTicker());
+                                    sendHtmlMessage(saved.getChatId(), msg, keyboard);
+                                })
+                                .then();
+                    }
+                    return Mono.empty();
+                })
+                .then();
+    }
+
 
     /**
      * Weekly coupon payout digest.
@@ -394,8 +439,50 @@ public class TelegramAlertDispatcherService {
         return String.format("%,.0f", val.doubleValue()).replace(',', ' ');
     }
 
+    private String buildPriceAlertTriggeredMessage(PriceAlertTargetEntity alert, BigDecimal currentPrice) {
+        String directionText = "ABOVE".equalsIgnoreCase(alert.getDirection()) ? "выросла до / превысила" : "опустилась до / ниже";
+        String icon = "ABOVE".equalsIgnoreCase(alert.getDirection()) ? "🚀" : "📉";
+
+        BigDecimal initial = alert.getInitialPrice() != null ? alert.getInitialPrice() : alert.getTargetPrice();
+        BigDecimal diffPct = BigDecimal.ZERO;
+        if (initial != null && initial.compareTo(BigDecimal.ZERO) > 0) {
+            diffPct = currentPrice.subtract(initial).multiply(BigDecimal.valueOf(100)).divide(initial, 2, RoundingMode.HALF_UP);
+        }
+        String sign = diffPct.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
+
+        return String.format(
+                "🎯 <b>Сработал ваш лимит цены!</b> %s\n\n" +
+                "<b>Инструмент:</b> <code>%s</code>\n" +
+                "<b>Текущая цена:</b> <b>%s ₸</b> (%s%s%% от момента установки)\n" +
+                "<b>Целевой уровень:</b> <b>%s ₸</b> (цена %s цель)\n\n" +
+                "🔔 <i>Лимит выполнен и перемещен в архив. Вы можете поставить новый алерт в любой момент.</i>",
+                icon,
+                alert.getTicker().toUpperCase(),
+                formatMoney(currentPrice),
+                sign, diffPct.toPlainString(),
+                formatMoney(alert.getTargetPrice()),
+                directionText
+        );
+    }
+
+    private InlineKeyboardMarkup buildTargetTriggeredKeyboard(String ticker) {
+        return InlineKeyboardMarkup.builder()
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder()
+                                .text("📊 Анализ " + ticker)
+                                .callbackData("TA_" + ticker)
+                                .build(),
+                        InlineKeyboardButton.builder()
+                                .text("🔔 Новый алерт")
+                                .callbackData("SET_ALERT_" + ticker)
+                                .build()
+                ))
+                .build();
+    }
+
     private String escapeHtml(String text) {
         if (text == null) return "";
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }
+

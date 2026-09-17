@@ -3,6 +3,7 @@ package kz.nurgissa.kasestockexchangeparser.telegram;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
 import kz.nurgissa.kasestockexchangeparser.repositories.AlertCooldownRepository;
+import kz.nurgissa.kasestockexchangeparser.repositories.PriceAlertTargetRepository;
 import kz.nurgissa.kasestockexchangeparser.repositories.TelegramSubscriberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,16 +18,19 @@ class TelegramAlertDispatcherServiceTest {
 
     private TelegramSubscriberRepository subscriberRepository;
     private AlertCooldownRepository cooldownRepository;
+    private PriceAlertTargetRepository priceAlertTargetRepository;
     private TelegramAlertDispatcherService dispatcherService;
 
     @BeforeEach
     void setUp() {
         subscriberRepository = Mockito.mock(TelegramSubscriberRepository.class);
         cooldownRepository = Mockito.mock(AlertCooldownRepository.class);
+        priceAlertTargetRepository = Mockito.mock(PriceAlertTargetRepository.class);
         // disabled bot mode (e.g. without token)
         dispatcherService = new TelegramAlertDispatcherService(
                 subscriberRepository,
                 cooldownRepository,
+                priceAlertTargetRepository,
                 "",
                 false
         );
@@ -66,8 +70,14 @@ class TelegramAlertDispatcherServiceTest {
                 .dealCount(150)
                 .currency("KZT")
                 .build();
-
         StepVerifier.create(dispatcherService.broadcastStockMoveAlert(stock))
                 .verifyComplete();
     }
+
+    @Test
+    void checkAndDispatchPriceTargets_shouldCompleteGracefullyWhenDisabled() {
+        StepVerifier.create(dispatcherService.checkAndDispatchPriceTargets("KSPI", BigDecimal.valueOf(55000)))
+                .verifyComplete();
+    }
 }
+

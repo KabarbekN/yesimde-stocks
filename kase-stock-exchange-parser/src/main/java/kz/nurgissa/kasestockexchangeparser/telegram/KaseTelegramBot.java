@@ -4,9 +4,13 @@ import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.InstrumentDetailDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.SubscriberStatsDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.TechnicalAnalysisDto;
+import kz.nurgissa.kasestockexchangeparser.model.entities.PriceAlertTargetEntity;
 import kz.nurgissa.kasestockexchangeparser.model.entities.TelegramSubscriberEntity;
+import kz.nurgissa.kasestockexchangeparser.repositories.PriceAlertTargetRepository;
 import kz.nurgissa.kasestockexchangeparser.repositories.TelegramSubscriberRepository;
 import kz.nurgissa.kasestockexchangeparser.service.BondAnalyticsService;
+import kz.nurgissa.kasestockexchangeparser.service.TechnicalAnalysisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -49,6 +53,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private final TelegramSubscriberRepository subscriberRepository;
     private final BondAnalyticsService analyticsService;
     private final kz.nurgissa.kasestockexchangeparser.service.AixService aixService;
+    private final TechnicalAnalysisService technicalAnalysisService;
+    private final PriceAlertTargetRepository priceAlertTargetRepository;
     private final DatabaseClient databaseClient;
 
     public KaseTelegramBot(
@@ -56,6 +62,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             TelegramSubscriberRepository subscriberRepository,
             BondAnalyticsService analyticsService,
             kz.nurgissa.kasestockexchangeparser.service.AixService aixService,
+            TechnicalAnalysisService technicalAnalysisService,
+            PriceAlertTargetRepository priceAlertTargetRepository,
             DatabaseClient databaseClient
     ) {
         this.botToken = botToken;
@@ -63,6 +71,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         this.subscriberRepository = subscriberRepository;
         this.analyticsService = analyticsService;
         this.aixService = aixService;
+        this.technicalAnalysisService = technicalAnalysisService;
+        this.priceAlertTargetRepository = priceAlertTargetRepository;
         this.databaseClient = databaseClient;
         log.info("KASE & AIX Telegram Bot initialized successfully.");
     }
@@ -116,6 +126,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
         if (text.startsWith("/start") || text.equals("ℹ️ Меню")) {
             sendWelcome(chatId, firstName);
+        } else if (text.equals("⚡ Пульс рынка") || text.startsWith("/pulse") || text.startsWith("/market")) {
+            sendMarketPulse(chatId);
         } else if (text.equals("📉 Скидки (<95%)") || text.startsWith("/discounts")) {
             sendDiscounts(chatId);
         } else if (text.equals("🏆 Топ доходностей") || text.startsWith("/top")) {
@@ -128,6 +140,14 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             handleArbitrageCommand(chatId, text);
         } else if (text.startsWith("/depth")) {
             handleMarketDepthCommand(chatId, text);
+        } else if (text.startsWith("/ta") || text.startsWith("/rsi")) {
+            handleTechnicalAnalysisCommand(chatId, text);
+        } else if (text.startsWith("/alert")) {
+            handleAlertCommand(chatId, text);
+        } else if (text.equals("🔔 Мои алерты") || text.startsWith("/my_alerts") || text.equalsIgnoreCase("мои алерты") || text.equalsIgnoreCase("алерты")) {
+            sendMyAlerts(chatId);
+        } else if (text.startsWith("/threshold") || text.startsWith("/move")) {
+            handleThresholdCommand(chatId, text);
         } else if (text.startsWith("⚙️") || text.startsWith("/settings") || text.equalsIgnoreCase("подписки")) {
             sendSubscriptionSettings(chatId);
         } else if (text.equals("📊 Статистика") || text.startsWith("/stats")) {
@@ -145,11 +165,15 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         } else if (text.equals("ℹ️ О боте") || text.startsWith("/help")) {
             sendHelp(chatId);
         } else {
-            // Check if user just typed a ticker like "KZTKb3" or "KSPI" or "KAP"
-            if (text.length() <= 10 && !text.contains(" ")) {
+            // Natural language intent detection or quick ticker lookup
+            if (isNaturalLanguageTaQuery(text)) {
+                handleNaturalLanguageTaQuery(chatId, text);
+            } else if (text.toLowerCase().contains("пульс")) {
+                sendMarketPulse(chatId);
+            } else if (text.length() <= 10 && !text.contains(" ")) {
                 handleQuickTickerLookup(chatId, text.toUpperCase());
             } else {
-                sendMessage(chatId, "Команда не распознана. Используйте кнопки меню ниже или введите тикер бумаги (например: <code>KZTKb3</code>, <code>KSPI</code> или <code>KAP</code>).", buildMainMenuKeyboard());
+                sendMessage(chatId, "Команда не распознана. Используйте кнопки меню ниже или введите тикер бумаги (например: <code>KZTKb3</code>, <code>KSPI</code>, <code>/ta AIRA</code> или <code>/pulse</code>).", buildMainMenuKeyboard());
             }
         }
     }
@@ -208,7 +232,35 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             handleTrackCommand(chatId, "/track " + ticker, true);
         } else if (data.equals("VIEW_WATCHLIST")) {
             sendWatchlist(chatId);
+        } else if (data.startsWith("TA_")) {
+            String ticker = data.substring("TA_".length());
+            sendTechnicalAnalysis(chatId, ticker);
+        } else if (data.startsWith("COMPARE_")) {
+            String ticker = data.substring("COMPARE_".length());
+            handleArbitrageCommand(chatId, "/compare " + ticker);
+        } else if (data.startsWith("SET_ALERT_")) {
+            String ticker = data.substring("SET_ALERT_".length());
+            sendMessage(chatId, "Для установки лимита введите команду с ценой, например:\n<code>/alert " + ticker + " 55000</code>", null);
+        } else if (data.startsWith("DEL_ALERT_")) {
+            try {
+                Long alertId = Long.parseLong(data.substring("DEL_ALERT_".length()));
+                priceAlertTargetRepository.deleteByIdAndChatId(alertId, chatId)
+                        .doOnSuccess(v -> {
+                            sendMessage(chatId, "✅ Лимит-уведомление успешно удалено.", null);
+                            sendMyAlerts(chatId);
+                        })
+                        .subscribe(null, e -> log.error("Failed to delete alert: {}", e.getMessage()));
+            } catch (Exception e) {
+                log.error("Failed to parse alert ID: {}", e.getMessage());
+            }
+        } else if (data.equals("PULSE")) {
+            sendMarketPulse(chatId);
+        } else if (data.equals("MY_ALERTS")) {
+            sendMyAlerts(chatId);
+        } else if (data.equals("ARBITRAGE")) {
+            handleArbitrageCommand(chatId, "/arbitrage");
         }
+
     }
 
     private void sendWelcome(Long chatId, String name) {
@@ -220,14 +272,16 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     String text = String.format(
                             "Здравствуйте%s!\n\n" +
                             "Добро пожаловать в <b>KASE & AIX Radar</b> — ваш монитор казахстанского финансового рынка ценных бумаг.\n\n" +
-                            "<b>Что умеет бот:</b>\n" +
+                            "<b>Что умеет бот (100%% бесплатно):</b>\n" +
+                            "• ⚡ <b>Пульс рынка</b> — оперативные котировки, дневные диапазоны (High/Low) и индикаторы.\n" +
+                            "• 📊 <b>Технический анализ (AI)</b> — расчет RSI(14), SMA(20), зон перекупленности и поддержки.\n" +
+                            "• 🔔 <b>Лимит-уведомления</b> — ставьте цели по ценам (<code>/alert KSPI 55000</code>), бот мгновенно уведомит при достижении.\n" +
                             "• 📉 <b>Облигации со скидкой</b> — ловит бумаги ниже номинала (доходность выше рыночной).\n" +
                             "• 🆕 <b>Новые выпуски</b> — сообщает, когда на KASE появляются свежие облигации.\n" +
                             "• ⚖️ <b>Арбитраж KASE ⇄ AIX</b> — находит разницу цен на акции (Казатомпром, Kaspi, Halyk и др.).\n" +
                             "• 🏛️ <b>Биржа AIX</b> — стакан котировок (Level-2 Order Book), ETF и сукук.\n" +
                             "• 🐋 <b>Крупные сделки</b> — отслеживает заходы институциональных фондов (>500 млн ₸).\n" +
                             "• 📅 <b>Купонный дайджест</b> — напоминает по понедельникам, какие купоны выплатят на неделе.\n" +
-                            "• 📈 <b>Акции KASE & AIX</b> — котировки и вотчлист избранных акций.\n" +
                             "• 🧮 <b>Калькулятор</b> — наглядно рассчитывает выплаты и прибыль на вложенную сумму.\n\n" +
                             "Выберите действие в меню ниже 👇",
                             greeting
@@ -236,6 +290,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 })
                 .subscribe(null, e -> log.error("Error sending welcome message: {}", e.getMessage()));
     }
+
 
     private void sendDiscounts(Long chatId) {
         analyticsService.getDiscountBonds(95.0)
@@ -940,9 +995,20 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void sendHelp(Long chatId) {
         String help = """
                 ℹ️ <b>Справка по командам KASE & AIX Radar:</b>
-                
+
+                ⚡ <b>Пульс и Теханализ (100% Бесплатно):</b>
+                • <code>/pulse</code> или <code>⚡ Пульс рынка</code> — оперативный срез цен и дневных диапазонов
+                • <code>/ta &lt;ТИКЕР&gt;</code> или <code>/rsi &lt;ТИКЕР&gt;</code> — теханализ (RSI 14, SMA 20, уровни поддержки)
+                • Или спросите текстом: <i>«Покажи RSI для HSBK»</i>, <i>«Перекуплен ли AIRA?»</i>, <i>«Анализ KSPI»</i>
+
+                🔔 <b>Лимит-уведомления (Price Alerts):</b>
+                • <code>/alert &lt;ТИКЕР&gt; &lt;ЦЕНА&gt;</code> — поставить алерт на цену (напр.: <code>/alert KSPI 55000</code>)
+                • <code>/my_alerts</code> — список ваших активных алертов с кнопками отмены
+                • <code>/threshold &lt;ПРОЦЕНТ&gt;</code> — настроить порог уведомлений об изменении цен акций (по умолч. ±3.0%)
+
+                📊 <b>Облигации и Рынки:</b>
                 • <code>/discounts</code> — облигации с дисконтом (≤ 95% от номинала)
-                • <code>/top</code> — самые доходные корпоративные облигации в тенге
+                • <code>/top</code> — самые доходные облигации в тенге
                 • <code>/stocks</code> — текущие котировки главных акций KASE
                 • <code>/aix</code> — обзор инструментов, акций и ETF на бирже AIX
                 • <code>/depth &lt;ТИКЕР&gt;</code> — биржевой стакан AIX (например: <code>/depth KAP</code>)
@@ -950,9 +1016,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 • <code>/compare &lt;ТИКЕР&gt;</code> — сравнение цен акции на KASE и AIX (например: <code>/compare KZAP</code>)
                 • <code>/bond &lt;ТИКЕР&gt;</code> — подробная карточка облигации (например: <code>/bond BIDBb5</code>)
                 • <code>/stock &lt;ТИКЕР&gt;</code> — карточка акции (например: <code>/stock KSPI</code>)
-                • <code>/calc &lt;ТИКЕР&gt; &lt;СУММА&gt;</code> — калькулятор купонов и прибыли (например: <code>/calc BIDBb5 500000</code>)
-                • <code>/track &lt;ТИКЕР&gt;</code> — добавить акцию в персональный вотчлист
-                • <code>/untrack &lt;ТИКЕР&gt;</code> — удалить акцию из вотчлиста
+                • <code>/calc &lt;ТИКЕР&gt; &lt;СУММА&gt;</code> — калькулятор дохода (например: <code>/calc BIDBb5 500000</code>)
+                • <code>/track &lt;ТИКЕР&gt;</code> — добавить в персональный вотчлист
                 • <code>/settings</code> — управление категориями подписок
                 """;
         sendMessage(chatId, help, buildMainMenuKeyboard());
@@ -980,10 +1045,11 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 : "⚙️ Мои подписки";
 
         return ReplyKeyboardMarkup.builder()
+                .keyboardRow(new KeyboardRow("⚡ Пульс рынка", "📈 Акции KASE"))
                 .keyboardRow(new KeyboardRow("📉 Скидки (<95%)", "🏆 Топ доходностей"))
-                .keyboardRow(new KeyboardRow("📈 Акции KASE", "🏛️ Биржа AIX"))
-                .keyboardRow(new KeyboardRow("⚖️ Арбитраж KASE/AIX", "🧮 Калькулятор"))
-                .keyboardRow(new KeyboardRow(settingsLabel, "ℹ️ О боте"))
+                .keyboardRow(new KeyboardRow("⚖️ Арбитраж KASE/AIX", "🏛️ Биржа AIX"))
+                .keyboardRow(new KeyboardRow("🧮 Калькулятор", settingsLabel))
+                .keyboardRow(new KeyboardRow("🔔 Мои алерты", "ℹ️ О боте"))
                 .resizeKeyboard(true)
                 .isPersistent(true)
                 .build();
@@ -992,6 +1058,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private ReplyKeyboardMarkup buildMainMenuKeyboard() {
         return buildMainMenuKeyboard(null);
     }
+
 
     private InlineKeyboardMarkup buildSettingsInlineKeyboard(TelegramSubscriberEntity sub, SubscriberStatsDto stats) {
         String newBondsIcon = Boolean.TRUE.equals(sub.getSubNewBonds()) ? "✅" : "❌";
@@ -1039,8 +1106,412 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         return String.format("%,.0f", val.doubleValue()).replace(',', ' ');
     }
 
+    private void sendMarketPulse(Long chatId) {
+        technicalAnalysisService.getMarketPulse(null)
+                .doOnSuccess(pulseList -> {
+                    if (pulseList == null || pulseList.isEmpty()) {
+                        sendMessage(chatId, "⚡ Данные пульса рынка в данный момент обновляются...", null);
+                        return;
+                    }
+
+                    StringBuilder sb = new StringBuilder("⚡ <b>Пульс рынка: KASE & AIX</b>\n");
+                    sb.append("<i>Оперативный срез цен и дневной динамики:</i>\n\n");
+
+                    for (TechnicalAnalysisDto item : pulseList) {
+                        BigDecimal cur = item.getCurrentPrice();
+                        BigDecimal chg = item.getChangePercent();
+                        String sign = (chg != null && chg.compareTo(BigDecimal.ZERO) >= 0) ? "+" : "";
+                        String icon = (chg != null && chg.compareTo(BigDecimal.ZERO) >= 0) ? "🟢" : "🔴";
+                        String chgStr = chg != null ? chg.setScale(2, RoundingMode.HALF_UP).toPlainString() : "0.00";
+                        String curStr = item.getCurrency() != null ? item.getCurrency() : "₸";
+
+                        String lowStr = item.getDayLow() != null ? formatMoney(item.getDayLow()) : "—";
+                        String highStr = item.getDayHigh() != null ? formatMoney(item.getDayHigh()) : "—";
+
+                        String rsiInfo = "";
+                        if (item.getRsi14() != null) {
+                            String rsiIcon = "OVERBOUGHT".equals(item.getRsiStatus()) ? "🔴 Перекуплен"
+                                    : ("OVERSOLD".equals(item.getRsiStatus()) ? "🟢 Перепродан" : "⚖️ Нейтрально");
+                            rsiInfo = String.format("\nRSI (14): <b>%.1f</b> (%s)", item.getRsi14().doubleValue(), rsiIcon);
+                        }
+
+                        sb.append(String.format(
+                                "<b>%s (%s)</b> [%s]\n" +
+                                "Текущая цена: <b>%s %s</b> %s %s%s%%\n" +
+                                "Диапазон дня: %s — %s %s%s\n" +
+                                "────────────────────\n",
+                                item.getTicker(),
+                                escapeHtml(item.getName()),
+                                item.getExchange(),
+                                cur != null ? formatMoney(cur) : "—",
+                                curStr,
+                                icon, sign, chgStr,
+                                lowStr, highStr, curStr,
+                                rsiInfo
+                        ));
+                    }
+
+                    sb.append("💡 <i>Детальный теханализ:</i> <code>/ta ТИКЕР</code>\n");
+                    sb.append("🔔 <i>Лимит цены:</i> <code>/alert ТИКЕР ЦЕНА</code>");
+
+                    InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 Анализ KSPI").callbackData("TA_KSPI").build(),
+                                    InlineKeyboardButton.builder().text("📊 Анализ AIRA").callbackData("TA_AIRA").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 Анализ HSBK").callbackData("TA_HSBK").build(),
+                                    InlineKeyboardButton.builder().text("📊 Анализ KZAP").callbackData("TA_KZAP").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔔 Мои алерты").callbackData("MY_ALERTS").build(),
+                                    InlineKeyboardButton.builder().text("⚖️ Арбитраж KASE/AIX").callbackData("ARBITRAGE").build()
+                            ))
+                            .build();
+
+                    sendMessage(chatId, sb.toString(), keyboard);
+                })
+                .subscribe(null, e -> log.error("Error sending market pulse: {}", e.getMessage()));
+    }
+
+    private void handleTechnicalAnalysisCommand(Long chatId, String text) {
+        String[] parts = text.trim().split("\\s+");
+        if (parts.length < 2) {
+            sendMessage(chatId, "💡 Введите тикер акции для анализа, например:\n<code>/ta KSPI</code>\nили <code>/ta AIRA</code>\nили <code>/ta KAP</code> (AIX)", null);
+            return;
+        }
+        sendTechnicalAnalysis(chatId, parts[1].trim().toUpperCase());
+    }
+
+    private void sendTechnicalAnalysis(Long chatId, String ticker) {
+        technicalAnalysisService.analyzeInstrument(ticker)
+                .doOnSuccess(ta -> {
+                    if (ta == null || ta.getCurrentPrice() == null) {
+                        sendMessage(chatId, "Инструмент <code>" + escapeHtml(ticker) + "</code> не найден среди акций KASE или AIX.", null);
+                        return;
+                    }
+
+                    String sign = (ta.getChangePercent() != null && ta.getChangePercent().compareTo(BigDecimal.ZERO) >= 0) ? "+" : "";
+                    String icon = (ta.getChangePercent() != null && ta.getChangePercent().compareTo(BigDecimal.ZERO) >= 0) ? "🟢" : "🔴";
+                    String curStr = ta.getCurrency() != null ? ta.getCurrency() : "₸";
+
+                    String rsiVal = ta.getRsi14() != null ? ta.getRsi14().toPlainString() : "Недостаточно свечей";
+                    String rsiZone;
+                    if ("OVERBOUGHT".equals(ta.getRsiStatus())) {
+                        rsiZone = "🔴 <b>Перекупленность (&gt;70)</b> — риск фиксации прибыли";
+                    } else if ("OVERSOLD".equals(ta.getRsiStatus())) {
+                        rsiZone = "🟢 <b>Перепроданность (&lt;30)</b> — зона потенциального отскока вверх";
+                    } else {
+                        rsiZone = "⚖️ <b>Нейтральная зона (30–70)</b>";
+                    }
+
+                    String smaVal = ta.getSma20() != null ? formatMoney(ta.getSma20()) + " " + curStr : "—";
+                    String trendStr;
+                    if ("BULLISH".equals(ta.getTrendSignal())) {
+                        trendStr = "Бычий 🐂 (цена выше средней)";
+                    } else if ("BEARISH".equals(ta.getTrendSignal())) {
+                        trendStr = "Медвежий 🐻 (цена ниже средней)";
+                    } else {
+                        trendStr = "Боковик / Нейтральный ⚖️";
+                    }
+
+                    String msg = String.format(
+                            "📊 <b>Технический анализ: %s (<code>%s</code>)</b>\n" +
+                            "Биржа: <b>%s</b> | Валюта: <b>%s</b>\n\n" +
+                            "💰 <b>Котировки:</b>\n" +
+                            "• Текущая цена: <b>%s %s</b> (%s %s%s%%)\n" +
+                            "• Дневной минимум: %s %s\n" +
+                            "• Дневной максимум: %s %s\n\n" +
+                            "📐 <b>Индикаторы:</b>\n" +
+                            "• <b>RSI (14):</b> <b>%s</b>\n" +
+                            "  %s\n" +
+                            "• <b>SMA (20 дней):</b> %s\n" +
+                            "• <b>Линия тренда:</b> %s\n" +
+                            "• <b>Уровень поддержки:</b> %s %s\n" +
+                            "• <b>Уровень сопротивления:</b> %s %s\n\n" +
+                            "💡 <b>Оценка AI-ассистента:</b>\n%s\n\n" +
+                            "🔔 <i>Поставить лимит-уведомление на цену:</i>\n" +
+                            "<code>/alert %s %s</code>",
+                            escapeHtml(ta.getName()),
+                            ta.getTicker(),
+                            ta.getExchange(),
+                            curStr,
+                            formatMoney(ta.getCurrentPrice()), curStr,
+                            icon, sign, ta.getChangePercent() != null ? ta.getChangePercent().setScale(2, RoundingMode.HALF_UP).toPlainString() : "0.00",
+                            formatMoney(ta.getDayLow()), curStr,
+                            formatMoney(ta.getDayHigh()), curStr,
+                            rsiVal,
+                            rsiZone,
+                            smaVal,
+                            trendStr,
+                            formatMoney(ta.getSupportLevel()), curStr,
+                            formatMoney(ta.getResistanceLevel()), curStr,
+                            ta.getRecommendation() != null ? ta.getRecommendation() : "—",
+                            ta.getTicker(),
+                            ta.getCurrentPrice().setScale(0, RoundingMode.HALF_UP).toPlainString()
+                    );
+
+                    InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔔 Поставить лимит").callbackData("SET_ALERT_" + ta.getTicker()).build(),
+                                    InlineKeyboardButton.builder().text("⚖️ Сравнить KASE/AIX").callbackData("COMPARE_" + ta.getTicker()).build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("⭐ В мой вотчлист").callbackData("TRACK_" + ta.getTicker()).build(),
+                                    InlineKeyboardButton.builder().text("⚡ Пульс рынка").callbackData("PULSE").build()
+                            ))
+                            .build();
+
+                    sendMessage(chatId, msg, keyboard);
+                })
+                .subscribe(null, e -> log.error("Error analyzing instrument {}: {}", ticker, e.getMessage()));
+    }
+
+    private boolean isNaturalLanguageTaQuery(String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase();
+        return lower.contains("rsi") || lower.contains("сма") || lower.contains("sma")
+                || lower.contains("анализ") || lower.contains("теханализ")
+                || lower.contains("перекуплен") || lower.contains("перепродан")
+                || lower.contains("сигнал") || lower.contains("тренд")
+                || lower.contains("техобзор") || lower.contains("индикатор");
+    }
+
+    private void handleNaturalLanguageTaQuery(Long chatId, String text) {
+        String ticker = extractTickerFromQuery(text);
+        if (ticker != null) {
+            sendTechnicalAnalysis(chatId, ticker);
+        } else {
+            sendMessage(chatId, "💡 Чтобы получить технический анализ, укажите тикер акции, например:\n<code>/ta KSPI</code>\nили напишите <i>«Анализ AIRA»</i> или <i>«RSI для HSBK»</i>.", null);
+        }
+    }
+
+    private String extractTickerFromQuery(String query) {
+        List<String> known = List.of(
+                "KSPI", "HSBK", "KZAP", "AIRA", "CCBN", "KMGZ", "KZTK", "KEGC", "BCKP", "KAP", "KZTO", "ASBN", "FRHC_KZ"
+        );
+        String upper = query.toUpperCase();
+        for (String k : known) {
+            if (upper.contains(k)) {
+                return k;
+            }
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\b([A-Z]{3,8})\\b").matcher(upper);
+        while (matcher.find()) {
+            String candidate = matcher.group(1);
+            if (!candidate.equals("RSI") && !candidate.equals("SMA") && !candidate.equals("KASE") && !candidate.equals("AIX")) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void handleAlertCommand(Long chatId, String text) {
+        String clean = text.trim();
+        String[] parts = clean.split("\\s+");
+        if (parts.length < 3) {
+            sendMessage(chatId, """
+                    🔔 <b>Установка лимит-уведомлений (Price Alerts):</b>
+
+                    Бот пришлет мгновенное push-уведомление, когда цена акции на бирже достигнет вашей цели. <b>Функция 100% бесплатна!</b>
+
+                    Формат:
+                    <code>/alert &lt;ТИКЕР&gt; &lt;ЦЕНА&gt;</code>
+
+                    Примеры:
+                    • <code>/alert KSPI 55000</code> — уведомить при росте Kaspi до 55 000 ₸
+                    • <code>/alert HSBK 370</code> — уведомить при падении Halyk до 370 ₸
+                    • <code>/alert AIRA 700</code> — уведомить при росте Air Astana до 700 ₸
+
+                    Ваши активные алерты: <code>/my_alerts</code>
+                    """, null);
+            return;
+        }
+
+        String ticker = parts[1].trim().toUpperCase();
+        String priceStr = parts[2].replace(",", ".").replace(">", "").replace("<", "").trim();
+        BigDecimal targetPrice;
+        try {
+            targetPrice = new BigDecimal(priceStr);
+            if (targetPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                sendMessage(chatId, "Цена должна быть положительным числом.", null);
+                return;
+            }
+        } catch (Exception e) {
+            sendMessage(chatId, "Неверный формат цены. Пример: <code>/alert KSPI 55000</code>", null);
+            return;
+        }
+
+        technicalAnalysisService.analyzeInstrument(ticker)
+                .flatMap(ta -> {
+                    BigDecimal curPrice = ta.getCurrentPrice();
+                    if (curPrice == null) {
+                        curPrice = targetPrice;
+                    }
+
+                    String direction = targetPrice.compareTo(curPrice) >= 0 ? "ABOVE" : "BELOW";
+                    if (clean.contains("<")) {
+                        direction = "BELOW";
+                    } else if (clean.contains(">")) {
+                        direction = "ABOVE";
+                    }
+
+                    PriceAlertTargetEntity alert = PriceAlertTargetEntity.builder()
+                            .chatId(chatId)
+                            .ticker(ticker)
+                            .targetPrice(targetPrice)
+                            .direction(direction)
+                            .initialPrice(curPrice)
+                            .isTriggered(false)
+                            .createdAt(LocalDateTime.now())
+                            .build();
+
+                    final BigDecimal finalCurPrice = curPrice;
+                    final String finalDirection = direction;
+                    return priceAlertTargetRepository.save(alert)
+                            .doOnSuccess(saved -> {
+                                String dirText = "ABOVE".equals(finalDirection) ? "росте до / выше" : "падении до / ниже";
+                                String icon = "ABOVE".equals(finalDirection) ? "📈" : "📉";
+                                BigDecimal diffPct = BigDecimal.ZERO;
+                                if (finalCurPrice.compareTo(BigDecimal.ZERO) > 0) {
+                                    diffPct = targetPrice.subtract(finalCurPrice).multiply(BigDecimal.valueOf(100)).divide(finalCurPrice, 2, RoundingMode.HALF_UP);
+                                }
+                                String sign = diffPct.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
+
+                                String msg = String.format(
+                                        "🔔 <b>Лимит-уведомление установлено!</b>\n\n" +
+                                        "📌 <b>Инструмент:</b> %s (<code>%s</code>)\n" +
+                                        "💵 <b>Текущая цена:</b> %s %s\n" +
+                                        "🎯 <b>Целевой уровень:</b> <b>%s %s</b> (%s%s%%)\n" +
+                                        "📡 <b>Условие:</b> Сработает при <b>%s %s %s</b> %s\n\n" +
+                                        "<i>Как только цена на бирже пробьет этот уровень, бот сразу пришлет вам сообщение. Функция абсолютно бесплатна!</i>\n\n" +
+                                        "Посмотреть все алерты: <code>/my_alerts</code>",
+                                        escapeHtml(ta.getName()),
+                                        ticker,
+                                        formatMoney(finalCurPrice), ta.getCurrency() != null ? ta.getCurrency() : "₸",
+                                        formatMoney(targetPrice), ta.getCurrency() != null ? ta.getCurrency() : "₸",
+                                        sign, diffPct.toPlainString(),
+                                        dirText, formatMoney(targetPrice), ta.getCurrency() != null ? ta.getCurrency() : "₸", icon
+                                );
+
+                                InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                                        .keyboardRow(new InlineKeyboardRow(
+                                                InlineKeyboardButton.builder().text("🔔 Мои алерты").callbackData("MY_ALERTS").build(),
+                                                InlineKeyboardButton.builder().text("📊 Анализ " + ticker).callbackData("TA_" + ticker).build()
+                                        ))
+                                        .build();
+
+                                sendMessage(chatId, msg, keyboard);
+                            });
+                })
+                .switchIfEmpty(Mono.fromRunnable(() ->
+                        sendMessage(chatId, "Инструмент <code>" + escapeHtml(ticker) + "</code> не найден.", null)
+                ))
+                .subscribe(null, e -> log.error("Error setting alert: {}", e.getMessage()));
+    }
+
+    private void sendMyAlerts(Long chatId) {
+        priceAlertTargetRepository.findAllActiveByChatId(chatId)
+                .collectList()
+                .doOnSuccess(alerts -> {
+                    if (alerts == null || alerts.isEmpty()) {
+                        sendMessage(chatId, """
+                                🔔 <b>У вас нет активных лимит-уведомлений.</b>
+
+                                Чтобы установить алерт на достижение цены:
+                                <code>/alert &lt;ТИКЕР&gt; &lt;ЦЕНА&gt;</code>
+
+                                Например:
+                                • <code>/alert KSPI 55000</code>
+                                • <code>/alert HSBK 370</code>
+                                """, null);
+                        return;
+                    }
+
+                    StringBuilder sb = new StringBuilder("🔔 <b>Ваши активные лимит-уведомления:</b>\n\n");
+                    List<InlineKeyboardRow> rows = new ArrayList<>();
+
+                    for (int i = 0; i < alerts.size(); i++) {
+                        PriceAlertTargetEntity a = alerts.get(i);
+                        String cond = "ABOVE".equalsIgnoreCase(a.getDirection()) ? "при росте ≥" : "при падении ≤";
+                        sb.append(String.format(
+                                "%d. <code>%s</code> — цель: <b>%s ₸</b> (%s)\n" +
+                                "   Создан: %s\n\n",
+                                i + 1,
+                                a.getTicker(),
+                                formatMoney(a.getTargetPrice()),
+                                cond,
+                                a.getCreatedAt() != null ? a.getCreatedAt().toLocalDate().toString() : "сегодня"
+                        ));
+
+                        rows.add(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder()
+                                        .text(String.format("❌ Удалить %s (%s)", a.getTicker(), formatMoney(a.getTargetPrice())))
+                                        .callbackData("DEL_ALERT_" + a.getId())
+                                        .build()
+                        ));
+                    }
+
+                    sb.append("<i>Нажмите на кнопку ниже, чтобы отменить алерт:</i>");
+                    InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder().keyboard(rows).build();
+                    sendMessage(chatId, sb.toString(), keyboard);
+                })
+                .subscribe(null, e -> log.error("Error fetching my alerts: {}", e.getMessage()));
+    }
+
+    private void handleThresholdCommand(Long chatId, String text) {
+        String[] parts = text.trim().split("\\s+");
+        if (parts.length < 2) {
+            subscriberRepository.findById(chatId)
+                    .doOnSuccess(sub -> {
+                        BigDecimal curTh = (sub != null && sub.getPriceChangeThreshold() != null)
+                                ? sub.getPriceChangeThreshold()
+                                : BigDecimal.valueOf(3.0);
+                        sendMessage(chatId, String.format(
+                                "⚙️ <b>Настройка порога движения цен акций:</b>\n\n" +
+                                "Текущий порог: <b>±%.1f%%</b>\n\n" +
+                                "Бот присылает уведомления обо всех акциях KASE, цена которых за день изменилась сильнее этого значения.\n\n" +
+                                "Чтобы изменить порог, введите команду со значением:\n" +
+                                "• <code>/threshold 2.5</code> (более чувствительный)\n" +
+                                "• <code>/threshold 5.0</code> (только сильные движения)\n\n" +
+                                "💡 <i>У других ботов эта функция требует платной подписки (399 ₸/мес), а у нас — 100% бесплатно!</i>",
+                                curTh.doubleValue()
+                        ), null);
+                    })
+                    .subscribe();
+            return;
+        }
+
+        try {
+            double val = Double.parseDouble(parts[1].replace(",", ".").trim());
+            if (val <= 0 || val > 50) {
+                sendMessage(chatId, "Пожалуйста, укажите порог в процентах от 0.5% до 50%. Например: <code>/threshold 2.5</code>", null);
+                return;
+            }
+            BigDecimal threshold = BigDecimal.valueOf(val).setScale(2, RoundingMode.HALF_UP);
+            subscriberRepository.findById(chatId)
+                    .flatMap(sub -> {
+                        sub.setPriceChangeThreshold(threshold);
+                        sub.setUpdatedAt(LocalDateTime.now());
+                        return subscriberRepository.save(sub);
+                    })
+                    .doOnSuccess(sub -> {
+                        sendMessage(chatId, String.format(
+                                "✅ <b>Порог движения цен успешно установлен: ±%.1f%%!</b>\n\n" +
+                                "Теперь вы будете оперативно получать алерты об акциях KASE с дневным движением от %.1f%%.\n\n" +
+                                "Напоминаем: в нашем боте все подобные функции всегда 100% бесплатны!",
+                                val, val
+                        ), null);
+                    })
+                    .subscribe();
+        } catch (Exception e) {
+            sendMessage(chatId, "Неверный формат. Пример: <code>/threshold 2.5</code>", null);
+        }
+    }
+
     private String escapeHtml(String text) {
         if (text == null) return "";
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }
+
