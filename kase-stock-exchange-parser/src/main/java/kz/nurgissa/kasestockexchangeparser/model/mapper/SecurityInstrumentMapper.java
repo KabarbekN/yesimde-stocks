@@ -4,6 +4,9 @@ import kz.nurgissa.kasestockexchangeparser.model.dtos.SecurityInstrumentResponse
 import kz.nurgissa.kasestockexchangeparser.model.entities.*;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -150,5 +153,38 @@ public class SecurityInstrumentMapper {
                         .orgShortestNameKz(mm.getOrgShortestNameKz())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    public SecurityPriceHistoryEntity toPriceHistoryEntity(SecurityInstrumentResponse dto) {
+        if (dto.getId() == null) return null;
+        if (dto.getPrice() == null && dto.getBestBid() == null && dto.getBestOffer() == null && (dto.getDealcnt() == null || dto.getDealcnt() == 0)) {
+            return null;
+        }
+
+        BigDecimal spread = null;
+        BigDecimal spreadPercent = null;
+        if (dto.getBestOffer() != null && dto.getBestBid() != null) {
+            spread = dto.getBestOffer().subtract(dto.getBestBid());
+            BigDecimal mid = dto.getBestOffer().add(dto.getBestBid()).divide(BigDecimal.valueOf(2), 6, RoundingMode.HALF_UP);
+            if (mid.compareTo(BigDecimal.ZERO) > 0) {
+                spreadPercent = spread.multiply(BigDecimal.valueOf(100)).divide(mid, 4, RoundingMode.HALF_UP);
+            }
+        }
+
+        return SecurityPriceHistoryEntity.builder()
+                .securityInstrumentId(dto.getId())
+                .price(dto.getPrice())
+                .closePrice(dto.getClosePrice())
+                .bestBid(dto.getBestBid())
+                .bestOffer(dto.getBestOffer())
+                .spread(spread)
+                .spreadPercent(spreadPercent)
+                .volkzt(dto.getVolkzt())
+                .volusd(dto.getVolusd())
+                .dealcnt(dto.getDealcnt())
+                .ytm(dto.getYtm())
+                .dohod(dto.getDohod())
+                .recordedAt(LocalDateTime.now())
+                .build();
     }
 }

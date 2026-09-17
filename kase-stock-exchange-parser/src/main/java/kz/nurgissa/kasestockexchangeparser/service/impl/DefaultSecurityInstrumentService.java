@@ -2,15 +2,9 @@ package kz.nurgissa.kasestockexchangeparser.service.impl;
 
 import kz.nurgissa.kasestockexchangeparser.client.KaseClient;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.SecurityInstrumentResponse;
-import kz.nurgissa.kasestockexchangeparser.model.entities.InstrumentMarketMakerEntity;
-import kz.nurgissa.kasestockexchangeparser.model.entities.MarketMakerEntity;
-import kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity;
-import kz.nurgissa.kasestockexchangeparser.model.entities.TickerEntity;
+import kz.nurgissa.kasestockexchangeparser.model.entities.*;
 import kz.nurgissa.kasestockexchangeparser.model.mapper.SecurityInstrumentMapper;
-import kz.nurgissa.kasestockexchangeparser.repositories.InstrumentMarketMakerRepository;
-import kz.nurgissa.kasestockexchangeparser.repositories.MarketMakerRepository;
-import kz.nurgissa.kasestockexchangeparser.repositories.SecurityInstrumentRepository;
-import kz.nurgissa.kasestockexchangeparser.repositories.TickerRepository;
+import kz.nurgissa.kasestockexchangeparser.repositories.*;
 import kz.nurgissa.kasestockexchangeparser.service.SecurityInstrumentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +30,8 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
     private final KaseClient kaseClient;
     private final R2dbcEntityTemplate template;
     private final InstrumentMarketMakerRepository immRepository;
+    private final SecurityPriceHistoryRepository priceHistoryRepository;
+    private final kz.nurgissa.kasestockexchangeparser.telegram.TelegramAlertDispatcherService alertDispatcherService;
 
     @Override
     public Mono<Void> saveAll(Flux<SecurityInstrumentResponse> flux) {
@@ -44,6 +40,7 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
                     SecurityInstrumentEntity instr = securityInstrumentMapper.toSecurityInstrumentEntity(dto);
                     TickerEntity ticker = securityInstrumentMapper.toTickerEntity(dto);
                     List<MarketMakerEntity> makers = securityInstrumentMapper.toMarketMakerEntityList(dto);
+                    SecurityPriceHistoryEntity history = securityInstrumentMapper.toPriceHistoryEntity(dto);
 
                     Mono<Void> upsertInstr = upsertInstrument(instr);
                     Mono<Void> upsertTick  = ticker == null
@@ -58,10 +55,14 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
                                     PARALLELISM
                             );
 
+                    Mono<Void> saveHistory = history == null
+                            ? Mono.empty()
+                            : priceHistoryRepository.save(history).then();
+
                     return upsertInstr
                             .then(upsertTick)
                             .thenMany(upsertMakers)
-                            .then();
+                            .then(saveHistory);
                 }, PARALLELISM)
                 .then();
     }
@@ -75,10 +76,22 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
 
     private Mono<Void> upsertInstrument(SecurityInstrumentEntity instrument) {
         return securityInstrumentRepository.existsById(instrument.getId())
-                .flatMap(exists -> exists
-                        ? securityInstrumentRepository.save(instrument).then()
-                        : template.insert(SecurityInstrumentEntity.class).using(instrument).then()
-                )
+                .flatMap(exists -> {
+                    if (exists) {
+                        return securityInstrumentRepository.save(instrument).then();
+                    } else {
+                        Mono<Void> insert = template.insert(SecurityInstrumentEntity.class).using(instrument).then();
+                        if (("bond".equalsIgnoreCase(instrument.getSecType()) || "gsec".equalsIgnoreCase(instrument.getSecType()))
+                                && alertDispatcherService.isEnabled()) {
+                            return insert.then(
+                                    tickerRepository.findById(instrument.getId())
+                                            .flatMap(t -> alertDispatcherService.broadcastNewBondAlert(instrument, t))
+                                            .switchIfEmpty(alertDispatcherService.broadcastNewBondAlert(instrument, null))
+                            );
+                        }
+                        return insert;
+                    }
+                })
                 .onErrorResume(DuplicateKeyException.class, ex -> Mono.empty());
     }
 

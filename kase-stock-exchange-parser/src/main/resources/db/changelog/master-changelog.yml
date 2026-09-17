@@ -12,3 +12,14 @@ databaseChangeLog:
   - include:
       file: 04-create-market-maker-instrument.sql
       relativeToChangelogFile: true
+  - include:
+      file: 05-create-security-price-history.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 06-create-telegram-tables.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 07-create-aix-tables.sql
+      relativeToChangelogFile: true
+
+

@@ -2,17 +2,23 @@ spring:
   application:
     name: kase-stock-exchange-parser
   r2dbc:
-    password: "0000"
-    url: r2dbc:postgresql://localhost:5432/kase_db
-    username: "postgres"
+    password: ${DB_PASSWORD:0000}
+    url: ${DB_R2DBC_URL:r2dbc:postgresql://localhost:5432/kase_db}
+    username: ${DB_USERNAME:postgres}
   liquibase:
     change-log: classpath:/db/changelog/master-changelog.yml
     enabled: true
-    user: "postgres"
-    password: "0000"
-    url: jdbc:postgresql://localhost:5432/kase_db
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:0000}
+    url: ${DB_JDBC_URL:jdbc:postgresql://localhost:5432/kase_db}
 server:
-  port: 0
+  port: ${PORT:8080}
+
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN:}
+    username: ${TELEGRAM_BOT_USERNAME:KaseRadarBot}
+    enabled: ${TELEGRAM_BOT_ENABLED:false}
 
 #logging:
 #  level:

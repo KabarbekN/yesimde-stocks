@@ -1,0 +1,1987 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KASE Pro Terminal | Аналитика долгового и фондового рынка Казахстана</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #090B10;
+            color: #E2E8F0;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .num-font {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #090B10;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #242C3D;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3B82F6;
+        }
+        .help-dot {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 9999px;
+            font-size: 9px;
+            font-weight: bold;
+            background-color: #1E2638;
+            color: #94A3B8;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-left: 4px;
+        }
+        .help-dot:hover {
+            background-color: #2563EB;
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+
+    <!-- GLOBAL MINIMAL HEADER -->
+    <header class="border-b border-[#1E2638] bg-[#0E121C]/90 backdrop-blur sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+            
+            <!-- Left: Brand & Back to Hub button -->
+            <div class="flex items-center gap-3">
+                <div onclick="navigateView('hub')" class="flex items-center gap-2.5 cursor-pointer group select-none">
+                    <div class="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-white shadow-sm group-hover:border-blue-500 transition">
+                        <span class="text-xs tracking-wider font-mono">KP</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-sm tracking-tight text-white uppercase font-mono group-hover:text-blue-400 transition">KASE PRO</span>
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">ТЕРМИНАЛ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Breadcrumb Back button (visible only in sub-views) -->
+                <button id="btnBackToHub" onclick="navigateView('hub')" class="hidden ml-2 px-2.5 py-1 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs text-slate-300 border border-[#232F46] flex items-center gap-1.5 transition">
+                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    <span>К выбору цели</span>
+                </button>
+            </div>
+
+            <!-- Right: Search & Terms Help -->
+            <div class="flex items-center gap-3">
+                <!-- Search bar -->
+                <div class="relative hidden sm:block">
+                    <input type="text" id="globalSearchInput" oninput="handleGlobalSearch(this.value)" placeholder="Найти бумагу (тикер, банк)..." 
+                        class="w-56 lg:w-72 bg-[#121622] border border-[#1E2638] rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition">
+                    <div id="globalSearchResults" class="absolute top-full left-0 right-0 mt-1 bg-[#121622] border border-[#1E2638] rounded-lg shadow-2xl hidden z-50 overflow-hidden max-h-60 overflow-y-auto">
+                        <!-- Search results -->
+                    </div>
+                </div>
+
+                <!-- Terms dictionary button -->
+                <button onclick="openTermModal('ytm')" class="px-2.5 py-1.5 rounded bg-[#121622] hover:bg-[#1A2030] text-xs font-medium text-slate-300 border border-[#1E2638] flex items-center gap-1.5 transition">
+                    <span class="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 text-[10px] flex items-center justify-center font-bold">?</span>
+                    <span class="hidden md:inline">Словарь терминов</span>
+                </button>
+
+                <!-- Arbitrage shortcut -->
+                <button onclick="navigateView('terminal'); switchTerminalTab('arbitrage');" class="hidden sm:flex px-2.5 py-1.5 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs font-medium text-indigo-300 border border-indigo-500/30 items-center gap-1.5 transition">
+                    <span>⚖️ Арбитраж AIX/KASE</span>
+                </button>
+
+                <!-- Full terminal shortcut -->
+                <button onclick="navigateView('terminal')" id="btnOpenTerminalTop" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs font-medium text-white transition flex items-center gap-1.5">
+                    <span>Биржевой скринер</span>
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </button>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="flex-1 w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
+
+        <!-- ================= VIEW 1: CLEAN GOAL HUB (MAXIMUM BREATHING SPACE) ================= -->
+        <div id="view-hub" class="app-view max-w-4xl mx-auto w-full py-8 md:py-16 flex flex-col items-center gap-8">
+            
+            <!-- Hero Heading -->
+            <div class="text-center flex flex-col items-center gap-3 max-w-2xl">
+                <span class="px-2.5 py-1 rounded-full text-[11px] font-mono tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/20 uppercase font-semibold">
+                    Фондовый рынок Казахстана KASE
+                </span>
+                <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-tight leading-tight">
+                    Какая у вас цель с деньгами?
+                </h1>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-xl">
+                    Биржа KASE позволяет получать гарантированный доход выше банковского вклада с нулевым налогом. Выберите подходящий сценарий:
+                </p>
+            </div>
+
+            <!-- 3 Main Goal Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                
+                <!-- Goal 1: Replace Deposit -->
+                <div onclick="navigateView('goal-deposit')" class="p-6 rounded-xl bg-[#10141E] hover:bg-[#141A28] border border-[#1E2638] hover:border-blue-500 cursor-pointer transition flex flex-col justify-between group shadow-lg shadow-black/40">
+                    <div class="flex flex-col gap-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold uppercase">
+                                Риск ~ 0%
+                            </span>
+                            <span class="text-xs text-slate-500 font-mono">1–2 года</span>
+                        </div>
+                        <h3 class="text-base font-bold text-white group-hover:text-blue-400 transition">
+                            Замена депозиту
+                        </h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            Облигации государственных и национальных компаний (Самрук-Казына, БРК, КФУ). Надежнее любого частного банка, а доход выше на 3–4%.
+                        </p>
+                    </div>
+                    <div class="mt-6 pt-4 border-t border-[#1E2638] flex items-center justify-between">
+                        <div class="flex flex-col num-font">
+                            <span class="text-[10px] text-slate-500 uppercase">Доходность</span>
+                            <span class="text-sm font-bold text-blue-300">15.5% – 17.5%</span>
+                        </div>
+                        <span class="text-xs font-semibold text-blue-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                            Рассчитать →
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Goal 2: Monthly Passive Income -->
+                <div onclick="navigateView('goal-monthly')" class="p-6 rounded-xl bg-[#10141E] hover:bg-[#141A28] border border-[#1E2638] hover:border-emerald-500 cursor-pointer transition flex flex-col justify-between group shadow-lg shadow-black/40">
+                    <div class="flex flex-col gap-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold uppercase">
+                                Вторая зарплата
+                            </span>
+                            <span class="text-xs text-slate-500 font-mono">12 мес/год</span>
+                        </div>
+                        <h3 class="text-base font-bold text-white group-hover:text-emerald-400 transition">
+                            Доход каждый месяц
+                        </h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            Корзина из облигаций, которые выплачивают купоны в разные месяцы года. Деньги автоматически капают вам на карту круглый год.
+                        </p>
+                    </div>
+                    <div class="mt-6 pt-4 border-t border-[#1E2638] flex items-center justify-between">
+                        <div class="flex flex-col num-font">
+                            <span class="text-[10px] text-slate-500 uppercase">Выплаты</span>
+                            <span class="text-sm font-bold text-emerald-400">Ежемесячно</span>
+                        </div>
+                        <span class="text-xs font-semibold text-emerald-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                            Календарь →
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Goal 3: Maximum Yield -->
+                <div onclick="navigateView('goal-yield')" class="p-6 rounded-xl bg-[#10141E] hover:bg-[#141A28] border border-[#1E2638] hover:border-amber-500 cursor-pointer transition flex flex-col justify-between group shadow-lg shadow-black/40">
+                    <div class="flex flex-col gap-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold uppercase">
+                                Топ ставка
+                            </span>
+                            <span class="text-xs text-slate-500 font-mono">Бизнес</span>
+                        </div>
+                        <h3 class="text-base font-bold text-white group-hover:text-amber-400 transition">
+                            Максимальный доход
+                        </h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            Облигации крупных коммерческих банков и лидеров бизнеса с высокими процентными ставками для максимального приумножения капитала.
+                        </p>
+                    </div>
+                    <div class="mt-6 pt-4 border-t border-[#1E2638] flex items-center justify-between">
+                        <div class="flex flex-col num-font">
+                            <span class="text-[10px] text-slate-500 uppercase">Доходность</span>
+                            <span class="text-sm font-bold text-amber-400">18.5% – 21.0%</span>
+                        </div>
+                        <span class="text-xs font-semibold text-amber-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                            Выбрать →
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Arbitrage KASE ⇄ AIX Banner -->
+            <div onclick="navigateView('terminal'); switchTerminalTab('arbitrage');" class="w-full p-4 rounded-xl bg-gradient-to-r from-blue-950/40 via-indigo-950/40 to-slate-900 border border-blue-500/30 hover:border-blue-400 cursor-pointer transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group shadow-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-lg font-bold flex-shrink-0">
+                        ⚖️
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-white group-hover:text-indigo-300 transition">Арбитражный радар: KASE ⇄ AIX</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/20 text-indigo-300 font-semibold uppercase">Кросс-листинг</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">Сравнение цен акций (Казатомпром, Kaspi.kz, Halyk Bank, Air Astana, КМГ) между KASE и Международной биржей Астаны (AIX) в реальном времени.</p>
+                    </div>
+                </div>
+                <span class="text-xs font-semibold text-indigo-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform flex-shrink-0">
+                    Смотреть спреды →
+                </span>
+            </div>
+
+            <!-- Bottom Sub-Actions (Tax Badge & Pro Terminal Link) -->
+            <div class="w-full flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-[#1E2638] text-xs">
+                <!-- Tax benefit indicator -->
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">ИПН 0%</span>
+                    <span class="text-slate-400">Доходы по биржевым облигациям KASE полностью освобождены от подоходного налога.</span>
+                    <span class="help-dot" onclick="openTermModal('tax')">?</span>
+                </div>
+
+                <!-- Open full terminal link -->
+                <button onclick="navigateView('terminal')" class="text-blue-400 hover:text-blue-300 font-mono text-xs flex items-center gap-1 transition flex-shrink-0">
+                    <span>Открыть терминал со всеми 7 600 бумагами KASE</span>
+                    <span>→</span>
+                </button>
+            </div>
+
+        </div>
+
+        <!-- ================= VIEW 2: SCENARIO «ЗАМЕНА ДЕПОЗИТУ» ================= -->
+        <div id="view-goal-deposit" class="app-view hidden max-w-4xl mx-auto w-full py-6 flex flex-col gap-6">
+            
+            <!-- Breadcrumb / Header -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <span class="text-blue-400 font-mono text-xs uppercase font-semibold">Сценарий</span>
+                    <h2 class="text-xl font-bold text-white">Замена банковскому депозиту</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Надежные бумаги квазигосударственного сектора с доходностью на 3-4% выше вклада в банке.</p>
+                </div>
+                <button onclick="navigateView('hub')" class="px-3 py-1.5 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs text-slate-300 border border-[#232F46] transition">
+                    ← К выбору цели
+                </button>
+            </div>
+
+            <!-- Calculator Block -->
+            <div class="bg-[#10141E] p-6 rounded-xl border border-[#1E2638] flex flex-col gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 uppercase tracking-wider font-mono mb-1.5">Сумма вложений (₸)</label>
+                        <input type="number" id="depCalcSum" value="1000000" step="100000" oninput="runDepositScenarioCalc()" 
+                            class="num-font w-full bg-[#090B10] border border-[#1E2638] rounded-lg px-3 py-2 text-sm text-white font-semibold focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 uppercase tracking-wider font-mono mb-1.5">Срок размещения</label>
+                        <select id="depCalcPeriod" onchange="runDepositScenarioCalc()" class="w-full bg-[#090B10] border border-[#1E2638] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                            <option value="1">1 год</option>
+                            <option value="2" selected>2 года</option>
+                            <option value="3">3 года</option>
+                        </select>
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-900 border border-emerald-500/30 flex flex-col justify-center">
+                        <span class="text-[10px] text-emerald-400 font-mono uppercase">Ваша чистая переплата над банком</span>
+                        <span id="depDiffProfit" class="text-lg font-bold text-emerald-400 num-font">+ 65 000 ₸</span>
+                    </div>
+                </div>
+
+                <!-- Direct Comparison Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4 border-t border-[#1E2638]">
+                    <div class="p-4 rounded-lg bg-[#090B10] border border-[#1E2638] flex justify-between items-center">
+                        <div>
+                            <span class="text-xs text-slate-400 block">Банковский вклад (~14% годовых)</span>
+                            <span class="text-[11px] text-slate-500">Обычный депозит Kaspi/Halyk</span>
+                        </div>
+                        <span id="depBankProfit" class="text-lg font-bold text-slate-300 num-font">280 000 ₸</span>
+                    </div>
+                    <div class="p-4 rounded-lg bg-[#090B10] border border-blue-500/30 flex justify-between items-center">
+                        <div>
+                            <span class="text-xs text-blue-300 font-semibold block">Облигации KASE (~18% годовых)</span>
+                            <span class="text-[11px] text-slate-400">100% квазигос + ИПН 0%</span>
+                        </div>
+                        <span id="depBondsProfit" class="text-lg font-bold text-emerald-400 num-font">360 000 ₸</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Curated Bonds List (Only 4-5 best options) -->
+            <div class="bg-[#10141E] p-5 rounded-xl border border-[#1E2638] flex flex-col gap-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-white">Рекомендованные выпуски для этой цели</h3>
+                    <span class="text-xs text-slate-400 font-mono">Проверенные бумаги квазигоссектора</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs num-font">
+                        <thead>
+                            <tr class="text-slate-500 border-b border-[#1E2638]">
+                                <th class="pb-2.5">Код / Эмитент</th>
+                                <th class="pb-2.5 text-right">Доходность в год <span class="help-dot" onclick="openTermModal('ytm', event)">?</span></th>
+                                <th class="pb-2.5 text-right">Выплаты (Купон) <span class="help-dot" onclick="openTermModal('cupon', event)">?</span></th>
+                                <th class="pb-2.5 text-right">Возврат долга <span class="help-dot" onclick="openTermModal('dtm', event)">?</span></th>
+                                <th class="pb-2.5 text-center">Легкость продажи <span class="help-dot" onclick="openTermModal('spread', event)">?</span></th>
+                                <th class="pb-2.5 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="depBondsTableBody" class="divide-y divide-[#1A2234]">
+                            <!-- Dynamically loaded 5 bonds -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ================= VIEW 3: SCENARIO «ДОХОД КАЖДЫЙ МЕСЯЦ» ================= -->
+        <div id="view-goal-monthly" class="app-view hidden max-w-4xl mx-auto w-full py-6 flex flex-col gap-6">
+            
+            <div class="flex items-center justify-between">
+                <div>
+                    <span class="text-emerald-400 font-mono text-xs uppercase font-semibold">Сценарий</span>
+                    <h2 class="text-xl font-bold text-white">Пассивный доход каждый месяц</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Купонная «зарплата» круглый год от надежных казахстанских эмитентов.</p>
+                </div>
+                <button onclick="navigateView('hub')" class="px-3 py-1.5 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs text-slate-300 border border-[#232F46] transition">
+                    ← К выбору цели
+                </button>
+            </div>
+
+            <!-- Target Income Calculator -->
+            <div class="bg-[#10141E] p-6 rounded-xl border border-[#1E2638] flex flex-col gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 uppercase tracking-wider font-mono mb-1.5">Желаемый доход каждый месяц (₸)</label>
+                        <input type="number" id="monthlyGoalInput" value="100000" step="10000" oninput="runMonthlyGoalCalc()" 
+                            class="num-font w-full bg-[#090B10] border border-[#1E2638] rounded-lg px-3 py-2 text-sm text-white font-semibold focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div class="p-3.5 rounded-lg bg-slate-900 border border-[#1E2638] flex flex-col justify-center">
+                        <span class="text-[10px] text-slate-400 font-mono uppercase">Необходимый капитал (при ~18% ставке)</span>
+                        <span id="monthlyGoalCapital" class="text-lg font-bold text-emerald-400 num-font">6 666 667 ₸</span>
+                    </div>
+                </div>
+
+                <!-- 12 Month Breakdown -->
+                <div class="pt-4 border-t border-[#1E2638]">
+                    <span class="text-[11px] text-slate-400 uppercase font-mono block mb-2">Календарь поступления выплат на ваш счет:</span>
+                    <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 num-font text-xs">
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Янв</span>
+                            <span class="font-bold text-white" id="mGoal-1">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Фев</span>
+                            <span class="font-bold text-white" id="mGoal-2">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Мар</span>
+                            <span class="font-bold text-white" id="mGoal-3">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Апр</span>
+                            <span class="font-bold text-white" id="mGoal-4">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Май</span>
+                            <span class="font-bold text-white" id="mGoal-5">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Июн</span>
+                            <span class="font-bold text-white" id="mGoal-6">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Июл</span>
+                            <span class="font-bold text-white" id="mGoal-7">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Авг</span>
+                            <span class="font-bold text-white" id="mGoal-8">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Сен</span>
+                            <span class="font-bold text-white" id="mGoal-9">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Окт</span>
+                            <span class="font-bold text-white" id="mGoal-10">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Ноя</span>
+                            <span class="font-bold text-white" id="mGoal-11">100 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] text-center">
+                            <span class="text-[10px] text-slate-500 block">Дек</span>
+                            <span class="font-bold text-white" id="mGoal-12">100 000 ₸</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recommended Basket for Monthly Income -->
+            <div class="bg-[#10141E] p-5 rounded-xl border border-[#1E2638] flex flex-col gap-3">
+                <h3 class="text-sm font-bold text-white">Рекомендуемый состав корзины для круглогодичных выплат</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs num-font">
+                        <thead>
+                            <tr class="text-slate-500 border-b border-[#1E2638]">
+                                <th class="pb-2.5">Код бумаги</th>
+                                <th class="pb-2.5">Эмитент</th>
+                                <th class="pb-2.5 text-right">Купон в год <span class="help-dot" onclick="openTermModal('cupon', event)">?</span></th>
+                                <th class="pb-2.5 text-right">Месяцы выплат <span class="help-dot" onclick="openTermModal('cupon', event)">?</span></th>
+                                <th class="pb-2.5 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthlyBondsTableBody" class="divide-y divide-[#1A2234]">
+                            <!-- Monthly bonds rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ================= VIEW 4: SCENARIO «МАКСИМАЛЬНЫЙ ДОХОД» ================= -->
+        <div id="view-goal-yield" class="app-view hidden max-w-4xl mx-auto w-full py-6 flex flex-col gap-6">
+            
+            <div class="flex items-center justify-between">
+                <div>
+                    <span class="text-amber-400 font-mono text-xs uppercase font-semibold">Сценарий</span>
+                    <h2 class="text-xl font-bold text-white">Максимальная доходность (до 21%)</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Облигации с наивысшими процентными ставками при умеренном риске.</p>
+                </div>
+                <button onclick="navigateView('hub')" class="px-3 py-1.5 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs text-slate-300 border border-[#232F46] transition">
+                    ← К выбору цели
+                </button>
+            </div>
+
+            <div class="bg-[#10141E] p-5 rounded-xl border border-[#1E2638] flex flex-col gap-3">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs num-font">
+                        <thead>
+                            <tr class="text-slate-500 border-b border-[#1E2638]">
+                                <th class="pb-2.5">Код / Эмитент</th>
+                                <th class="pb-2.5 text-right">Доходность в год <span class="help-dot" onclick="openTermModal('ytm', event)">?</span></th>
+                                <th class="pb-2.5 text-right">Купонная ставка <span class="help-dot" onclick="openTermModal('cupon', event)">?</span></th>
+                                <th class="pb-2.5 text-right">Срок возврата <span class="help-dot" onclick="openTermModal('dtm', event)">?</span></th>
+                                <th class="pb-2.5 text-center">Спред <span class="help-dot" onclick="openTermModal('spread', event)">?</span></th>
+                                <th class="pb-2.5 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="highYieldTableBody" class="divide-y divide-[#1A2234]">
+                            <!-- High yield bonds -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ================= VIEW 5: FULL PRO TERMINAL (FULL WIDTH) ================= -->
+        <div id="view-terminal" class="app-view hidden max-w-[1920px] w-full mx-auto flex flex-col gap-4">
+            
+            <!-- Terminal Header Controls -->
+            <div class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-[#10141E] border border-[#1E2638]">
+                <!-- Left: Navigation tabs inside terminal -->
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button onclick="switchTerminalTab('screener')" id="termTabBtn-screener" class="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium transition">
+                        Облигации KASE
+                    </button>
+                    <button onclick="switchTerminalTab('aix')" id="termTabBtn-aix" class="px-3 py-1.5 rounded bg-[#161D2B] text-slate-400 hover:text-white text-xs font-medium transition flex items-center gap-1.5">
+                        <span>🏛️ Биржа AIX</span>
+                    </button>
+                    <button onclick="switchTerminalTab('arbitrage')" id="termTabBtn-arbitrage" class="px-3 py-1.5 rounded bg-[#161D2B] text-slate-400 hover:text-white text-xs font-medium transition flex items-center gap-1.5">
+                        <span>⚖️ Арбитраж KASE ⇄ AIX</span>
+                    </button>
+                    <button onclick="switchTerminalTab('yield-curve')" id="termTabBtn-yield-curve" class="px-3 py-1.5 rounded bg-[#161D2B] text-slate-400 hover:text-white text-xs font-medium transition">
+                        2D График кривой
+                    </button>
+                    <button onclick="switchTerminalTab('whales')" id="termTabBtn-whales" class="px-3 py-1.5 rounded bg-[#161D2B] text-slate-400 hover:text-white text-xs font-medium transition">
+                        Радар сделок
+                    </button>
+                </div>
+
+                <!-- Right: Back to goals & Density -->
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleFilterDrawer()" class="px-3 py-1.5 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs text-slate-200 border border-[#232F46] flex items-center gap-1.5 transition">
+                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+                        <span>Фильтры</span>
+                    </button>
+                    <button onclick="navigateView('hub')" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs text-white transition">
+                        ← К выбору цели
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filter Panel (Collapsible to preserve space) -->
+            <div id="terminalFilterPanel" class="bg-[#10141E] p-4 rounded-lg border border-[#1E2638] flex flex-col gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    <div>
+                        <label class="block text-[10px] text-slate-400 uppercase font-mono mb-1">Поиск</label>
+                        <input type="text" id="termFilterSearch" oninput="debounceFilter()" placeholder="Код, эмитент..." 
+                            class="w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-slate-400 uppercase font-mono mb-1">Валюта</label>
+                        <select id="termFilterCurrency" onchange="fetchBonds()" class="w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                            <option value="">Все валюты</option>
+                            <option value="KZT">₸ KZT</option>
+                            <option value="USD">$ USD</option>
+                            <option value="EUR">€ EUR</option>
+                            <option value="RUB">₽ RUB</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-slate-400 uppercase font-mono mb-1">Мин. доходность YTM <span class="help-dot" onclick="openTermModal('ytm', event)">?</span></label>
+                        <input type="number" id="termFilterMinYtm" onchange="fetchBonds()" placeholder="напр. 15%" step="0.5" 
+                            class="w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white num-font">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-slate-400 uppercase font-mono mb-1">Макс. спред % <span class="help-dot" onclick="openTermModal('spread', event)">?</span></label>
+                        <select id="termFilterMaxSpread" onchange="fetchBonds()" class="w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                            <option value="">Любой</option>
+                            <option value="1.5">Узкий (&lt; 1.5%)</option>
+                            <option value="3.0">До 3%</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-slate-400 uppercase font-mono mb-1">Сортировка</label>
+                        <select id="termFilterSortBy" onchange="fetchBonds()" class="w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                            <option value="ytm">По доходности</option>
+                            <option value="volume">По объему</option>
+                            <option value="spread">По спреду</option>
+                            <option value="dtm">По сроку</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal Sub-Tab 1: Screener Table -->
+            <div id="termTab-screener" class="bg-[#10141E] rounded-lg border border-[#1E2638] overflow-hidden flex flex-col">
+                <div class="overflow-x-auto min-h-[500px]">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-[#0B0E16] text-[11px] text-slate-400 font-mono uppercase tracking-wider border-b border-[#1E2638]">
+                                <th class="px-3 py-2.5">Код / Бумага</th>
+                                <th class="px-3 py-2.5">Эмитент</th>
+                                <th class="px-3 py-2.5 text-right">Цена <span class="help-dot" onclick="openTermModal('price', event)">?</span></th>
+                                <th class="px-3 py-2.5 text-right">Доходность (YTM) <span class="help-dot" onclick="openTermModal('ytm', event)">?</span></th>
+                                <th class="px-3 py-2.5 text-right">Купон <span class="help-dot" onclick="openTermModal('cupon', event)">?</span></th>
+                                <th class="px-3 py-2.5 text-right">Срок (DTM) <span class="help-dot" onclick="openTermModal('dtm', event)">?</span></th>
+                                <th class="px-3 py-2.5 text-center">Спред стакана <span class="help-dot" onclick="openTermModal('spread', event)">?</span></th>
+                                <th class="px-3 py-2.5 text-center">Ликвидность <span class="help-dot" onclick="openTermModal('liquidity', event)">?</span></th>
+                                <th class="px-3 py-2.5 text-right">Объем торгов</th>
+                                <th class="px-3 py-2.5 text-center">Тренд 30д</th>
+                                <th class="px-3 py-2.5 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="terminalTableBody" class="divide-y divide-[#182030]">
+                            <!-- Dynamically loaded rows -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-4 py-2.5 bg-[#0C0F17] border-t border-[#1E2638] flex items-center justify-between text-xs text-slate-400 font-mono">
+                    <span id="termTableCountSummary">Загрузка...</span>
+                    <span>Кликните на строку для открытия паспорта инструмента</span>
+                </div>
+            </div>
+
+            <!-- Terminal Sub-Tab: AIX Market -->
+            <div id="termTab-aix" class="hidden flex flex-col gap-3">
+                <!-- AIX Filters -->
+                <div class="bg-[#10141E] p-3.5 rounded-lg border border-[#1E2638] flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="w-48 sm:w-64">
+                            <input type="text" id="aixFilterSearch" oninput="debounceAixFilter()" placeholder="Поиск по AIX (тикер, эмитент)..."
+                                class="w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500">
+                        </div>
+                        <select id="aixFilterAssetClass" onchange="fetchAixInstruments()" class="bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                            <option value="">Все классы активов</option>
+                            <option value="Equity">Акции (Equities)</option>
+                            <option value="Debt">Облигации и сукук (Debt)</option>
+                            <option value="ETF">ETF и ETN фонды</option>
+                        </select>
+                        <select id="aixFilterCurrency" onchange="fetchAixInstruments()" class="bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                            <option value="">Все валюты</option>
+                            <option value="KZT">₸ KZT</option>
+                            <option value="USD">$ USD</option>
+                            <option value="EUR">€ EUR</option>
+                            <option value="CNY">¥ CNY (Юань)</option>
+                            <option value="RUB">₽ RUB</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="syncAixData()" class="px-2.5 py-1.5 rounded bg-[#161D2B] hover:bg-[#20293D] text-xs text-slate-300 border border-[#232F46] flex items-center gap-1.5 transition">
+                            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            <span>Синхронизировать с AIX</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- AIX Table -->
+                <div class="bg-[#10141E] rounded-lg border border-[#1E2638] overflow-hidden flex flex-col">
+                    <div class="overflow-x-auto min-h-[480px]">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-[#0B0E16] text-[11px] text-slate-400 font-mono uppercase tracking-wider border-b border-[#1E2638]">
+                                    <th class="px-3 py-2.5">Символ / Код</th>
+                                    <th class="px-3 py-2.5">Наименование / Эмитент</th>
+                                    <th class="px-3 py-2.5 text-center">Класс актива</th>
+                                    <th class="px-3 py-2.5 text-center">Валюта</th>
+                                    <th class="px-3 py-2.5 text-right">Посл. цена / Реф.</th>
+                                    <th class="px-3 py-2.5 text-right">Изм. за день</th>
+                                    <th class="px-3 py-2.5 text-right">Объем торгов</th>
+                                    <th class="px-3 py-2.5 text-right">Сделок</th>
+                                    <th class="px-3 py-2.5 text-center">NAV (для ETF)</th>
+                                    <th class="px-3 py-2.5 text-center">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="aixTableBody" class="divide-y divide-[#182030]">
+                                <!-- AIX rows dynamically loaded -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="px-4 py-2.5 bg-[#0C0F17] border-t border-[#1E2638] flex items-center justify-between text-xs text-slate-400 font-mono">
+                        <span id="aixTableCountSummary">Загрузка AIX...</span>
+                        <span>Прямые официальные котировки Astana International Exchange</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal Sub-Tab: Cross-Exchange Arbitrage (KASE ⇄ AIX) -->
+            <div id="termTab-arbitrage" class="hidden flex flex-col gap-3">
+                <!-- Explainer info card -->
+                <div class="p-4 rounded-lg bg-[#10141E] border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-indigo-500/10 text-indigo-400 font-bold flex items-center justify-center text-sm border border-indigo-500/20">
+                            ⚖️
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-bold text-white uppercase font-mono">Межбиржевой арбитраж акций РК (KASE ⇄ AIX)</h4>
+                            <p class="text-[11px] text-slate-400">Автоматическое сопоставление по международному коду ISIN ценных бумаг с двойным листингом на двух биржах Казахстана.</p>
+                        </div>
+                    </div>
+                    <button onclick="fetchArbitrage()" class="px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition flex items-center gap-1.5 flex-shrink-0">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        <span>Обновить котировки арбитража</span>
+                    </button>
+                </div>
+
+                <!-- Arbitrage Opportunities Table -->
+                <div class="bg-[#10141E] rounded-lg border border-[#1E2638] overflow-hidden flex flex-col">
+                    <div class="overflow-x-auto min-h-[350px]">
+                        <table class="w-full text-left border-collapse text-xs num-font">
+                            <thead>
+                                <tr class="bg-[#0B0E16] text-[11px] text-slate-400 font-mono uppercase tracking-wider border-b border-[#1E2638]">
+                                    <th class="px-3 py-2.5">Компания / ISIN</th>
+                                    <th class="px-3 py-2.5 text-right">KASE Тикер & Цена</th>
+                                    <th class="px-3 py-2.5 text-right">AIX Тикер & Цена</th>
+                                    <th class="px-3 py-2.5 text-center">Валюта</th>
+                                    <th class="px-3 py-2.5 text-right">Спред (Разница)</th>
+                                    <th class="px-3 py-2.5 text-right">Спред %</th>
+                                    <th class="px-3 py-2.5 text-center">Где дешевле</th>
+                                    <th class="px-3 py-2.5 text-center">Стакан AIX (L2)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="arbitrageTableBody" class="divide-y divide-[#182030]">
+                                <!-- Arbitrage rows dynamically loaded -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal Sub-Tab 2: Yield Curve -->
+            <div id="termTab-yield-curve" class="hidden bg-[#10141E] p-4 rounded-lg border border-[#1E2638] flex flex-col gap-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-white">Кривая бескупонной доходности KASE</h3>
+                    <div class="flex items-center gap-4 text-xs font-mono">
+                        <span class="text-blue-400">● Суверенная кривая ГЦБ</span>
+                        <span class="text-emerald-400">● Корпоративные бонды</span>
+                    </div>
+                </div>
+                <div class="relative h-[480px] w-full">
+                    <canvas id="termYieldCurveCanvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Terminal Sub-Tab 3: Whale Radar -->
+            <div id="termTab-whales" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-[#10141E] rounded-lg border border-[#1E2638] p-4 flex flex-col gap-3">
+                    <h3 class="text-xs font-mono font-bold uppercase text-slate-300">Крупнейшие институциональные объемы</h3>
+                    <div id="termWhaleAnomaliesList" class="divide-y divide-[#1A2234]"></div>
+                </div>
+                <div class="bg-[#10141E] rounded-lg border border-[#1E2638] p-4 flex flex-col gap-3">
+                    <h3 class="text-xs font-mono font-bold uppercase text-slate-300">ТОП доходностей на рынке</h3>
+                    <div id="termHighYieldAnomaliesList" class="divide-y divide-[#1A2234]"></div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- ================= RIGHT INSPECTOR DRAWER ================= -->
+    <div id="inspectorDrawer" class="fixed inset-y-0 right-0 w-full max-w-lg bg-[#0F131D] border-l border-[#1E2638] shadow-2xl transform translate-x-full transition-transform duration-300 ease-in-out z-40 flex flex-col">
+        <div class="p-4 border-b border-[#1E2638] flex items-center justify-between bg-[#121622]">
+            <div class="flex items-center gap-2.5">
+                <span id="drawerSecTypeBadge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-400 uppercase">BOND</span>
+                <div>
+                    <h2 id="drawerCode" class="text-base font-bold text-white font-mono leading-none">--</h2>
+                    <span id="drawerName" class="text-xs text-slate-400 block truncate max-w-[280px]">--</span>
+                </div>
+            </div>
+            <button onclick="closeDrawer()" class="p-1.5 rounded hover:bg-[#1E2638] text-slate-400 hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 text-xs">
+            <!-- Key Metrics -->
+            <div class="grid grid-cols-3 gap-2 num-font">
+                <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                    <span class="text-[10px] text-slate-500 flex items-center justify-between">ЦЕНА <span class="help-dot" onclick="openTermModal('price', event)">?</span></span>
+                    <span id="drawerPrice" class="text-sm font-semibold text-white">--</span>
+                </div>
+                <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                    <span class="text-[10px] text-slate-500 flex items-center justify-between">ДОХОДНОСТЬ <span class="help-dot" onclick="openTermModal('ytm', event)">?</span></span>
+                    <span id="drawerYtm" class="text-sm font-semibold text-emerald-400">--</span>
+                </div>
+                <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                    <span class="text-[10px] text-slate-500 flex items-center justify-between">КУПОН <span class="help-dot" onclick="openTermModal('cupon', event)">?</span></span>
+                    <span id="drawerCupon" class="text-sm font-semibold text-blue-400">--</span>
+                </div>
+            </div>
+
+            <!-- Tax Badge -->
+            <div class="p-2.5 rounded bg-slate-900 border border-[#1E2638] flex items-center justify-between text-xs">
+                <span class="text-slate-400 text-[11px] flex items-center gap-1">Налоговый статус <span class="help-dot" onclick="openTermModal('tax', event)">?</span>:</span>
+                <span class="font-bold text-emerald-400 font-mono text-[11px]">ИПН 0% (освобождено в РК)</span>
+            </div>
+
+            <!-- Calculator -->
+            <div class="p-3.5 rounded-lg bg-[#131824] border border-[#1E2638] flex flex-col gap-2.5">
+                <span class="text-[11px] font-mono font-semibold text-slate-300 uppercase">Калькулятор дохода и лотов</span>
+                <div>
+                    <label class="block text-[10px] text-slate-400 uppercase font-mono mb-1">Сумма вложений (₸)</label>
+                    <input type="number" id="drawerCalcSum" value="1000000" step="100000" oninput="calculateDrawerProfit()" 
+                        class="num-font w-full bg-[#090B10] border border-[#1E2638] rounded px-2.5 py-1.5 text-xs text-white">
+                </div>
+                <div class="flex flex-col gap-1.5 pt-2 border-t border-[#1A2234] num-font text-xs">
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400 text-[11px]">Бумаг к покупке:</span>
+                        <span id="drawerCalcLotsCount" class="font-bold text-white">~ 1 000 шт.</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400 text-[11px]">Годовой доход:</span>
+                        <span id="drawerCalcAnnualProfit" class="font-bold text-emerald-400 text-sm">-- ₸</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400 text-[11px]">Итого за весь срок:</span>
+                        <span id="drawerCalcTotalPayout" class="font-bold text-blue-400">-- ₸</span>
+                    </div>
+                </div>
+                <button onclick="printInstrumentPassport()" class="mt-1 w-full py-1.5 rounded bg-[#1C2333] hover:bg-[#253048] text-[11px] font-medium text-slate-200 border border-[#2D3A54] transition flex items-center justify-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                    <span>Распечатать инвестиционный паспорт</span>
+                </button>
+            </div>
+
+            <!-- Market Makers -->
+            <div class="flex flex-col gap-1.5">
+                <span class="text-[11px] font-mono text-slate-400 uppercase flex items-center gap-1">Аккредитованные маркетмейкеры <span class="help-dot" onclick="openTermModal('liquidity', event)">?</span></span>
+                <div id="drawerMarketMakersList" class="flex flex-col gap-1"></div>
+            </div>
+
+            <!-- Price History -->
+            <div class="flex flex-col gap-1.5">
+                <span class="text-[11px] font-mono text-slate-400 uppercase">История последних срезов цен</span>
+                <table class="w-full text-left text-[11px] num-font">
+                    <thead>
+                        <tr class="text-slate-500 border-b border-[#1E2638]">
+                            <th class="pb-1">Время</th>
+                            <th class="pb-1 text-right">Цена</th>
+                            <th class="pb-1 text-right">Bid</th>
+                            <th class="pb-1 text-right">Offer</th>
+                        </tr>
+                    </thead>
+                    <tbody id="drawerPriceHistoryBody" class="divide-y divide-[#1A2234]"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= VISUAL TERM EXPLAINER MODAL ================= -->
+    <div id="termModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#10141E] border border-[#242C3D] rounded-xl max-w-xl w-full p-6 shadow-2xl flex flex-col gap-4 relative animate-in fade-in zoom-in-95 duration-150">
+            <button onclick="closeTermModal()" class="absolute top-4 right-4 p-1 rounded hover:bg-[#1E2638] text-slate-400 hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+            <div class="flex items-center gap-2.5">
+                <span id="modalTermCategory" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-400 uppercase">ТЕРМИН</span>
+                <h3 id="modalTermTitle" class="text-base font-bold text-white font-mono">Термин</h3>
+            </div>
+            <div class="p-3 rounded-lg bg-[#090B10] border border-[#1E2638]">
+                <span class="text-[10px] text-slate-500 uppercase tracking-wider font-mono block mb-1">Простыми словами:</span>
+                <p id="modalTermSimpleDef" class="text-xs text-slate-200 leading-relaxed font-sans"></p>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <span class="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Наглядный пример:</span>
+                <div id="modalTermVisualBox" class="p-4 rounded-lg bg-[#141A28] border border-[#1E2638] flex flex-col gap-2.5 text-xs"></div>
+            </div>
+            <div class="flex items-start gap-2.5 text-xs text-slate-400 pt-2 border-t border-[#1E2638]">
+                <div class="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0 text-[10px] font-bold">i</div>
+                <div>
+                    <strong class="text-slate-200">Совет начинающему:</strong>
+                    <span id="modalTermAdvice" class="ml-1"></span>
+                </div>
+            </div>
+            <button onclick="closeTermModal()" class="w-full py-2 rounded bg-[#1A2234] hover:bg-[#253048] text-xs font-semibold text-slate-200 border border-[#2D3A54] transition">
+                Понятно, закрыть
+            </button>
+        </div>
+    </div>
+
+    <!-- ================= AIX MARKET DEPTH (LEVEL-2 ORDER BOOK) MODAL ================= -->
+    <div id="depthModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#10141E] border border-[#242C3D] rounded-xl max-w-lg w-full p-5 shadow-2xl flex flex-col gap-4 relative animate-in fade-in zoom-in-95 duration-150">
+            <button onclick="closeDepthModal()" class="absolute top-4 right-4 p-1 rounded hover:bg-[#1E2638] text-slate-400 hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+            <div class="flex items-center gap-2.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-400 uppercase">AIX LEVEL-2</span>
+                <div>
+                    <h3 id="depthModalSymbol" class="text-base font-bold text-white font-mono leading-none">--</h3>
+                    <span id="depthModalIsin" class="text-[11px] text-slate-400 font-mono">ISIN: --</span>
+                </div>
+            </div>
+
+            <!-- Real-time Order Book -->
+            <div class="flex flex-col gap-2.5">
+                <!-- Offers / Asks (Sell) -->
+                <div>
+                    <div class="flex items-center justify-between text-[11px] font-mono text-rose-400 pb-1 border-b border-[#1E2638]">
+                        <span>ПРОДАЖА (OFFERS / ASKS)</span>
+                        <span>ОБЪЕМ | ЦЕНА</span>
+                    </div>
+                    <div id="depthOffersList" class="flex flex-col gap-1 py-1.5 num-font text-xs">
+                        <!-- Offers rows -->
+                    </div>
+                </div>
+
+                <!-- Spread divider -->
+                <div class="py-1 px-3 rounded bg-[#090B10] border border-[#1E2638] flex items-center justify-between text-xs num-font">
+                    <span class="text-slate-400 text-[10px] font-mono uppercase">Текущий спред стакана:</span>
+                    <span id="depthSpreadVal" class="font-bold text-amber-400">--</span>
+                </div>
+
+                <!-- Bids (Buy) -->
+                <div>
+                    <div class="flex items-center justify-between text-[11px] font-mono text-emerald-400 pb-1 border-b border-[#1E2638]">
+                        <span>ПОКУПКА (BIDS)</span>
+                        <span>ОБЪЕМ | ЦЕНА</span>
+                    </div>
+                    <div id="depthBidsList" class="flex flex-col gap-1 py-1.5 num-font text-xs">
+                        <!-- Bids rows -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2 border-t border-[#1E2638] text-[11px] text-slate-400 font-mono">
+                <span id="depthUpdateTime">Обновлено: только что</span>
+                <button onclick="refreshCurrentDepth()" class="px-2.5 py-1 rounded bg-[#1C2436] hover:bg-blue-600 text-slate-300 hover:text-white transition flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    <span>Обновить</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BACKDROP FOR DRAWER -->
+    <div id="drawerBackdrop" onclick="closeDrawer()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 hidden transition-opacity"></div>
+
+    <!-- JAVASCRIPT APP CONTROLLER -->
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentBondsData = [];
+        let currentAixData = [];
+        let currentArbitrageData = [];
+        let currentDepthSymbol = null;
+        let aixDebounceTimer = null;
+        let yieldCurveInstance = null;
+        let currentDrawerInstrument = null;
+        let activePreset = 'all';
+
+        // ================= GLOSSARY DICTIONARY =================
+        const GLOSSARY = {
+            ytm: {
+                title: 'YTM (Доходность к погашению)',
+                category: 'ДОХОДНОСТЬ',
+                simpleDef: 'Это полная реальная ставка доходности в год, которую вы гарантированно заработаете, если купите облигацию сегодня и продержите её до самого конца срока.',
+                visualHtml: `
+                    <div class="grid grid-cols-3 gap-2 text-center num-font mb-2">
+                        <div class="p-2 rounded bg-[#090B10]">
+                            <span class="text-[10px] text-slate-500 block">1. Купили со скидкой</span>
+                            <span class="font-bold text-white text-xs">92 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10]">
+                            <span class="text-[10px] text-slate-500 block">2. Получили купоны</span>
+                            <span class="font-bold text-blue-400 text-xs">+ 15 000 ₸</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10]">
+                            <span class="text-[10px] text-slate-500 block">3. Вернули номинал</span>
+                            <span class="font-bold text-emerald-400 text-xs">100 000 ₸</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-300 leading-snug">
+                        Вы вложили 92 000 ₸, а забрали 115 000 ₸. YTM учитывает И купоны, И выгоду от цены. Итого доходность = <strong>25.0%</strong>!
+                    </p>
+                `,
+                advice: 'Ориентируйтесь именно на YTM — это ваш фактический итоговый годовой процент, в отличие от просто купонной ставки.'
+            },
+            cupon: {
+                title: 'Купонная ставка и выплаты',
+                category: 'ВЫПЛАТЫ',
+                simpleDef: 'Это регулярный процент, который эмитент (компания или государство) переводит прямо на ваш брокерский счет за пользование деньгами. Это как арендная плата.',
+                visualHtml: `
+                    <div class="grid grid-cols-2 gap-2 text-xs num-font mb-2">
+                        <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">Купон 16% годовых</span>
+                            <span class="text-white font-bold text-xs mt-0.5 block">Вложили: 1 000 000 ₸</span>
+                            <span class="text-blue-400 font-bold block mt-1">+ 160 000 ₸ / год</span>
+                        </div>
+                        <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">Периодичность (2 раза в год)</span>
+                            <span class="text-emerald-400 font-bold text-xs mt-0.5 block">Каждые 6 месяцев</span>
+                            <span class="text-slate-200 font-bold block mt-1">+ 80 000 ₸ на счет</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-300 leading-snug">
+                        Купоны выплачиваются деньгами на счет регулярно. А в дату окончания срока вам вернут весь номинал (1 000 000 ₸).
+                    </p>
+                `,
+                advice: 'Если нужен стабильный денежный поток на жизнь — выбирайте облигации с выплатами 2 или 4 раза в год.'
+            },
+            dtm: {
+                title: 'DTM (Срок возврата долга)',
+                category: 'СРОКИ',
+                simpleDef: 'DTM (Days To Maturity) — количество дней, через которое эмитент обязан вернуть вам 100% номинала облигации.',
+                visualHtml: `
+                    <div class="grid grid-cols-2 gap-2 text-xs num-font mb-2">
+                        <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">DTM = 365 дней (1 год)</span>
+                            <span class="text-white font-bold text-xs mt-0.5 block">Короткий срок</span>
+                            <span class="text-emerald-400 text-[11px] block mt-1">Деньги быстро вернутся, риск минимален.</span>
+                        </div>
+                        <div class="p-2.5 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">DTM = 1095 дней (3 года)</span>
+                            <span class="text-white font-bold text-xs mt-0.5 block">Средний срок</span>
+                            <span class="text-blue-400 text-[11px] block mt-1">Фиксирует высокую ставку на несколько лет вперед.</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-300 leading-snug">
+                        <strong>Важно:</strong> Не обязательно ждать конца срока! Вы можете продать облигацию на бирже в любой будний день и забрать деньги.
+                    </p>
+                `,
+                advice: 'Короткие сроки (до 1-2 лет) идеальны как замена банковскому депозиту.'
+            },
+            spread: {
+                title: 'Спред стакана (Bid / Ask)',
+                category: 'ТОРГОВЛЯ',
+                simpleDef: 'Разница между ценой покупки и продажи — точь-в-точь как разница курсов покупки и продажи валюты в уличном обменнике.',
+                visualHtml: `
+                    <div class="grid grid-cols-2 gap-2 text-xs num-font mb-2">
+                        <div class="p-2.5 rounded bg-[#090B10] border border-emerald-500/30">
+                            <span class="text-emerald-400 text-[10px] font-bold block">УЗКИЙ СПРЕД (&lt; 1%)</span>
+                            <span class="text-white text-xs block mt-0.5">Покупка: 99.8% | Продажа: 100.2%</span>
+                            <span class="text-slate-400 text-[11px] block mt-1">Минимальная разница. Легко продать без потерь капитала.</span>
+                        </div>
+                        <div class="p-2.5 rounded bg-[#090B10] border border-rose-500/30">
+                            <span class="text-rose-400 text-[10px] font-bold block">ШИРОКИЙ СПРЕД (&gt; 4%)</span>
+                            <span class="text-white text-xs block mt-0.5">Покупка: 96.0% | Продажа: 101.0%</span>
+                            <span class="text-slate-400 text-[11px] block mt-1">При срочной продаже потеряете ~5%. Лучше держать до погашения.</span>
+                        </div>
+                    </div>
+                `,
+                advice: 'Выбирайте бумаги со спредом менее 1.5%, если планируете продавать до погашения.'
+            },
+            price: {
+                title: 'Биржевая цена (% от номинала)',
+                category: 'КОТИРОВКИ',
+                simpleDef: 'На бирже цены облигаций всегда указываются в процентах (%) от номинала (номинал 1 бумаги обычно 1 000 ₸).',
+                visualHtml: `
+                    <div class="grid grid-cols-3 gap-2 text-xs text-center num-font mb-2">
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">Цена: 98.00%</span>
+                            <span class="text-emerald-400 font-bold text-xs mt-0.5 block">Дисконт (скидка)</span>
+                            <span class="text-slate-300 text-[11px] block mt-1">Покупка за 980 ₸, вернут 1 000 ₸ (+20 ₸ плюс).</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">Цена: 100.00%</span>
+                            <span class="text-white font-bold text-xs mt-0.5 block">По номиналу</span>
+                            <span class="text-slate-300 text-[11px] block mt-1">Покупка ровно за 1 000 ₸. Доход строго по купону.</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638]">
+                            <span class="text-slate-400 text-[10px] block">Цена: 102.50%</span>
+                            <span class="text-amber-400 font-bold text-xs mt-0.5 block">С надбавкой</span>
+                            <span class="text-slate-300 text-[11px] block mt-1">Покупка за 1 025 ₸ (окупается высокой купонной ставкой).</span>
+                        </div>
+                    </div>
+                `,
+                advice: 'Покупка ниже 100% дает дополнительную прибыль за счет автоматического возврата номинала в 100%.'
+            },
+            liquidity: {
+                title: 'Ликвидность и Маркетмейкеры',
+                category: 'БЕЗОПАСНОСТЬ',
+                simpleDef: 'Ликвидность показывает, насколько легко и быстро можно обменять бумагу на живые деньги. Маркетмейкеры — это аккредитованные брокеры, которые обязаны выставлять котировки на выкуп.',
+                visualHtml: `
+                    <div class="p-3 rounded bg-[#090B10] border border-blue-500/30 flex flex-col gap-2 text-xs mb-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-300 font-semibold">Шкала ликвидности KASE PRO: 0–100</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 font-bold">ВЫСОКАЯ (60–100)</span>
+                        </div>
+                        <p class="text-slate-400 text-[11px] leading-relaxed">
+                            Мы анализируем объем торгов, величину спреда и присутствие официальных маркетмейкеров (Halyk, Freedom, BCC). При оценке выше 60 заявка исполняется мгновенно.
+                        </p>
+                    </div>
+                `,
+                advice: 'Если инвестируете крупную сумму (> 5 млн ₸), выбирайте бумаги со скорингом ликвидности от 50 и выше.'
+            },
+            tax: {
+                title: 'Налоговая льгота в Казахстане (ИПН 0%)',
+                category: 'НАЛОГИ И ЗАКОН',
+                simpleDef: 'В Казахстане все доходы физических лиц по биржевым облигациям KASE на 100% освобождены от индивидуального подоходного налога (ИПН 0%).',
+                visualHtml: `
+                    <div class="grid grid-cols-2 gap-2 text-xs num-font mb-2">
+                        <div class="p-2.5 rounded bg-[#090B10] border border-emerald-500/30">
+                            <span class="font-bold text-emerald-400 block mb-1">Биржевые облигации KASE</span>
+                            <span class="text-white text-xs block font-bold">Налог = 0%</span>
+                            <span class="text-slate-400 text-[11px] block mt-1">Заработали 180 000 ₸ — получили ровно 180 000 ₸ чистыми на руки.</span>
+                        </div>
+                        <div class="p-2.5 rounded bg-[#090B10] border border-slate-700">
+                            <span class="font-bold text-slate-400 block mb-1">Бизнес / сдача аренды</span>
+                            <span class="text-slate-300 text-xs block font-bold">Налог = 10%</span>
+                            <span class="text-slate-400 text-[11px] block mt-1">Из 180 000 ₸ дохода удерживается 18 000 ₸ налога.</span>
+                        </div>
+                    </div>
+                `,
+                advice: 'Основание — ст. 341 Налогового кодекса РК. Никаких налоговых деклараций сдавать не требуется.'
+            },
+            gspread: {
+                title: 'G-Spread (Премия за риск над Минфином)',
+                category: 'АНАЛИТИКА',
+                simpleDef: 'Разница в доходности между корпоративной облигацией и государственной облигацией Минфина РК на точно такой же срок.',
+                visualHtml: `
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs num-font mb-2">
+                        <div class="p-2 rounded bg-[#090B10]">
+                            <span class="text-slate-500 text-[10px] block">Ставка Минфина РК</span>
+                            <span class="font-bold text-blue-400 text-xs">13.50%</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10]">
+                            <span class="text-slate-500 text-[10px] block">Ставка компании</span>
+                            <span class="font-bold text-emerald-400 text-xs">17.20%</span>
+                        </div>
+                        <div class="p-2 rounded bg-[#090B10] border border-amber-500/30">
+                            <span class="text-amber-400 text-[10px] block font-bold">G-Spread</span>
+                            <span class="font-bold text-amber-400 text-xs">+ 3.70% (370 б.п.)</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-300 leading-snug">
+                        G-Spread показывает размер дополнительной премии, которую эмитент платит вам за выбор его бумаг вместо государственных.
+                    </p>
+                `,
+                advice: 'Высокий G-spread у надежного национального эмитента указывает на потенциально выгодную недооцененную бумагу.'
+            }
+        };
+
+        function openTermModal(termKey, event) {
+            if (event && event.stopPropagation) event.stopPropagation();
+            const data = GLOSSARY[termKey] || GLOSSARY['ytm'];
+            document.getElementById('modalTermTitle').textContent = data.title;
+            document.getElementById('modalTermCategory').textContent = data.category;
+            document.getElementById('modalTermSimpleDef').textContent = data.simpleDef;
+            document.getElementById('modalTermVisualBox').innerHTML = data.visualHtml;
+            document.getElementById('modalTermAdvice').textContent = data.advice;
+            document.getElementById('termModal').classList.remove('hidden');
+        }
+
+        function closeTermModal() {
+            document.getElementById('termModal').classList.add('hidden');
+        }
+
+        // ================= NAVIGATION VIEW CONTROLLER =================
+        function navigateView(viewId) {
+            // Hide all views
+            document.querySelectorAll('.app-view').forEach(el => el.classList.add('hidden'));
+
+            // Show selected view
+            const target = document.getElementById(`view-${viewId}`);
+            if (target) target.classList.remove('hidden');
+
+            // Toggle top breadcrumb back button
+            const backBtn = document.getElementById('btnBackToHub');
+            if (viewId === 'hub') {
+                backBtn.classList.add('hidden');
+            } else {
+                backBtn.classList.remove('hidden');
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Initialize data for target view
+            if (viewId === 'goal-deposit') {
+                runDepositScenarioCalc();
+                renderDepositScenarioBonds();
+            } else if (viewId === 'goal-monthly') {
+                runMonthlyGoalCalc();
+                renderMonthlyScenarioBonds();
+            } else if (viewId === 'goal-yield') {
+                renderHighYieldScenarioBonds();
+            } else if (viewId === 'terminal') {
+                fetchBonds();
+                fetchSummary();
+            }
+        }
+
+        // Startup
+        document.addEventListener('DOMContentLoaded', async () => {
+            await fetchBonds();
+            navigateView('hub'); // Start with the clean hub
+            
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeTermModal();
+                    closeDrawer();
+                    closeDepthModal();
+                }
+            });
+        });
+
+        // ================= DATA FETCHING =================
+        async function fetchBonds() {
+            const curr = document.getElementById('termFilterCurrency')?.value || '';
+            const minYtm = document.getElementById('termFilterMinYtm')?.value || '';
+            const maxSpread = document.getElementById('termFilterMaxSpread')?.value || '';
+            const search = document.getElementById('termFilterSearch')?.value || '';
+            const sortBy = document.getElementById('termFilterSortBy')?.value || 'ytm';
+
+            let url = `${API_BASE}/bonds?sortBy=${sortBy}&sortDir=desc&limit=250`;
+            if (curr) url += `&currency=${curr}`;
+            if (minYtm) url += `&minYtm=${minYtm}`;
+            if (maxSpread) url += `&maxSpread=${maxSpread}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+
+            try {
+                const res = await fetch(url);
+                currentBondsData = await res.json();
+                renderTerminalTable(currentBondsData);
+                document.getElementById('termTableCountSummary').textContent = `Показано ${currentBondsData.length} бумаг`;
+            } catch (e) {
+                console.error('Fetch error:', e);
+            }
+        }
+
+        async function fetchSummary() {
+            try {
+                const res = await fetch(`${API_BASE}/analytics/summary`);
+                const summary = await res.json();
+                renderWhales(summary);
+            } catch (e) {
+                console.warn(e);
+            }
+        }
+
+        // ================= SCENARIO 1: DEPOSIT REPLACEMENT =================
+        function runDepositScenarioCalc() {
+            const sum = parseFloat(document.getElementById('depCalcSum').value) || 1000000;
+            const years = parseInt(document.getElementById('depCalcPeriod').value) || 2;
+
+            const bankRate = 0.14; // 14%
+            const bondRate = 0.175; // 17.5%
+
+            const bankProfit = sum * bankRate * years;
+            const bondProfit = sum * bondRate * years;
+            const diff = bondProfit - bankProfit;
+
+            document.getElementById('depBankProfit').textContent = formatKzt(bankProfit);
+            document.getElementById('depBondsProfit').textContent = formatKzt(bondProfit);
+            document.getElementById('depDiffProfit').textContent = '+ ' + formatKzt(diff);
+        }
+
+        function renderDepositScenarioBonds() {
+            const tbody = document.getElementById('depBondsTableBody');
+            const safeBonds = currentBondsData
+                .filter(b => b.ytm >= 15 && b.bestBid > 0 && b.bestOffer > 0)
+                .slice(0, 5);
+
+            if (safeBonds.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500">Загрузка рекомендованных бумаг...</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = safeBonds.map(b => `
+                <tr class="hover:bg-[#141A28] transition cursor-pointer" onclick="openDrawer(${b.id})">
+                    <td class="py-2.5">
+                        <span class="font-bold text-white block">${b.code}</span>
+                        <span class="text-[11px] text-slate-400 truncate max-w-xs block">${b.orgShortNameRu || b.orgNameRu || '-'}</span>
+                    </td>
+                    <td class="py-2.5 text-right font-bold text-emerald-400">${b.ytm ? b.ytm.toFixed(2) + '%' : '-'}</td>
+                    <td class="py-2.5 text-right text-blue-400">${b.cupon ? b.cupon.toFixed(2) + '%' : '-'}</td>
+                    <td class="py-2.5 text-right text-slate-300">${b.finishDate || '-'}</td>
+                    <td class="py-2.5 text-center">
+                        <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400">Легко</span>
+                    </td>
+                    <td class="py-2.5 text-center">
+                        <button class="px-2.5 py-1 rounded bg-[#1C2436] hover:bg-blue-600 text-slate-300 hover:text-white text-xs transition">
+                            Паспорт
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ================= SCENARIO 2: MONTHLY INCOME =================
+        function runMonthlyGoalCalc() {
+            const targetMonthly = parseFloat(document.getElementById('monthlyGoalInput').value) || 100000;
+            const annualTarget = targetMonthly * 12;
+            const avgRate = 0.18;
+            const requiredCapital = annualTarget / avgRate;
+
+            document.getElementById('monthlyGoalCapital').textContent = formatKzt(requiredCapital);
+
+            for (let m = 1; m <= 12; m++) {
+                const el = document.getElementById(`mGoal-${m}`);
+                if (el) el.textContent = formatKzt(targetMonthly);
+            }
+        }
+
+        function renderMonthlyScenarioBonds() {
+            const tbody = document.getElementById('monthlyBondsTableBody');
+            const bonds = currentBondsData
+                .filter(b => b.cupon > 0 && b.ytm > 15)
+                .slice(0, 4);
+
+            tbody.innerHTML = bonds.map((b, idx) => {
+                const schedule = idx % 2 === 0 ? 'Январь / Июль' : 'Апрель / Октябрь';
+                return `
+                    <tr class="hover:bg-[#141A28] transition cursor-pointer" onclick="openDrawer(${b.id})">
+                        <td class="py-2.5 font-bold text-white">${b.code}</td>
+                        <td class="py-2.5 text-slate-300">${b.orgShortNameRu || b.orgNameRu || '-'}</td>
+                        <td class="py-2.5 text-right font-bold text-blue-400">${b.cupon ? b.cupon.toFixed(2) + '%' : '-'}</td>
+                        <td class="py-2.5 text-right text-emerald-400">${schedule}</td>
+                        <td class="py-2.5 text-center">
+                            <button class="px-2.5 py-1 rounded bg-[#1C2436] hover:bg-blue-600 text-slate-300 hover:text-white text-xs transition">
+                                Паспорт
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ================= SCENARIO 3: HIGH YIELD =================
+        function renderHighYieldScenarioBonds() {
+            const tbody = document.getElementById('highYieldTableBody');
+            const highBonds = currentBondsData
+                .filter(b => b.ytm >= 18)
+                .slice(0, 8);
+
+            tbody.innerHTML = highBonds.map(b => `
+                <tr class="hover:bg-[#141A28] transition cursor-pointer" onclick="openDrawer(${b.id})">
+                    <td class="py-2.5">
+                        <span class="font-bold text-white block">${b.code}</span>
+                        <span class="text-[11px] text-slate-400 truncate max-w-xs block">${b.orgShortNameRu || b.orgNameRu || '-'}</span>
+                    </td>
+                    <td class="py-2.5 text-right font-bold text-amber-400">${b.ytm ? b.ytm.toFixed(2) + '%' : '-'}</td>
+                    <td class="py-2.5 text-right text-blue-400">${b.cupon ? b.cupon.toFixed(2) + '%' : '-'}</td>
+                    <td class="py-2.5 text-right text-slate-300">${b.finishDate || '-'}</td>
+                    <td class="py-2.5 text-center text-slate-400">${b.spreadPercent ? b.spreadPercent.toFixed(1) + '%' : '-'}</td>
+                    <td class="py-2.5 text-center">
+                        <button class="px-2.5 py-1 rounded bg-[#1C2436] hover:bg-blue-600 text-slate-300 hover:text-white text-xs transition">
+                            Паспорт
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ================= TERMINAL TABLE RENDERING =================
+        function renderTerminalTable(bonds) {
+            const tbody = document.getElementById('terminalTableBody');
+            if (!bonds || bonds.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-slate-500">Бумаги не найдены</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = bonds.map(b => {
+                const isGsec = b.secType === 'gsec';
+                const typeBadge = isGsec 
+                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">ГЦБ</span>`
+                    : `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">КОРП</span>`;
+
+                const priceStr = b.price != null 
+                    ? (b.price > 150 ? formatKzt(b.price) : b.price.toFixed(2) + '%') 
+                    : '-';
+                const ytmStr = b.ytm ? `<span class="font-bold ${b.ytm >= 16 ? 'text-emerald-400' : 'text-slate-200'}">${b.ytm.toFixed(2)}%</span>` : '-';
+                const dtmStr = b.yearsToMaturity ? `${b.yearsToMaturity.toFixed(1)} г.` : (b.dtm ? `${(b.dtm / 365.25).toFixed(1)} г.` : '-');
+                const gspreadStr = isGsec
+                    ? '<span class="text-indigo-400 font-mono text-[10px]">Бенчмарк</span>'
+                    : (b.gSpread != null ? `<span class="${b.gSpread > 0 ? 'text-amber-400' : 'text-slate-400'} font-mono">${b.gSpread > 0 ? '+' : ''}${b.gSpread.toFixed(1)}%</span>` : '-');
+                const sparkline = generateSparklineSvg(b.sparklinePoints);
+
+                return `
+                    <tr onclick="openDrawer(${b.id})" class="hover:bg-[#151B27] cursor-pointer transition select-none group">
+                        <td class="px-3 py-2">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold font-mono text-white group-hover:text-blue-400">${b.code}</span>
+                                ${typeBadge}
+                            </div>
+                        </td>
+                        <td class="px-3 py-2 text-slate-300 max-w-[200px] truncate">${b.orgShortNameRu || b.orgNameRu || '-'}</td>
+                        <td class="px-3 py-2 text-right num-font">${priceStr}</td>
+                        <td class="px-3 py-2 text-right num-font">${ytmStr}</td>
+                        <td class="px-3 py-2 text-right num-font text-blue-400">${b.cupon ? b.cupon.toFixed(2) + '%' : '-'}</td>
+                        <td class="px-3 py-2 text-right num-font text-slate-400">${dtmStr}</td>
+                        <td class="px-3 py-2 text-center num-font">${gspreadStr}</td>
+                        <td class="px-3 py-2 text-center num-font">${b.liquidityScore || 0}/100</td>
+                        <td class="px-3 py-2 text-right num-font text-slate-400">${b.volkzt ? formatKztCompact(b.volkzt) : '-'}</td>
+                        <td class="px-3 py-2 text-center">${sparkline}</td>
+                        <td class="px-3 py-2 text-center">
+                            <button class="p-1 rounded hover:bg-blue-600/20 text-slate-400 hover:text-blue-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function generateSparklineSvg(points) {
+            if (!points || points.length < 2) return `-`;
+            const min = Math.min(...points);
+            const max = Math.max(...points);
+            const range = (max - min) || 1;
+            const width = 70;
+            const height = 18;
+
+            const coords = points.map((val, idx) => {
+                const x = (idx / (points.length - 1)) * width;
+                const y = height - ((val - min) / range) * (height - 4) - 2;
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            }).join(' ');
+
+            const isUp = points[points.length - 1] >= points[0];
+            return `<svg width="${width}" height="${height}"><polyline fill="none" stroke="${isUp ? '#10B981' : '#F43F5E'}" stroke-width="1.5" points="${coords}" /></svg>`;
+        }
+
+        // ================= GLOBAL SEARCH =================
+        function handleGlobalSearch(query) {
+            const resultsBox = document.getElementById('globalSearchResults');
+            if (!query || query.length < 2) {
+                resultsBox.classList.add('hidden');
+                return;
+            }
+
+            const q = query.toLowerCase();
+            const matches = currentBondsData.filter(b => 
+                (b.code && b.code.toLowerCase().includes(q)) || 
+                (b.orgNameRu && b.orgNameRu.toLowerCase().includes(q)) ||
+                (b.orgShortNameRu && b.orgShortNameRu.toLowerCase().includes(q))
+            ).slice(0, 6);
+
+            if (matches.length === 0) {
+                resultsBox.innerHTML = `<div class="p-3 text-xs text-slate-500 text-center">Ничего не найдено</div>`;
+            } else {
+                resultsBox.innerHTML = matches.map(b => `
+                    <div onclick="openDrawer(${b.id}); document.getElementById('globalSearchResults').classList.add('hidden')" class="p-2.5 hover:bg-[#1A2234] cursor-pointer flex items-center justify-between border-b border-[#1E2638] last:border-none">
+                        <div>
+                            <span class="font-bold text-white font-mono text-xs block">${b.code}</span>
+                            <span class="text-[11px] text-slate-400 truncate max-w-[200px] block">${b.orgShortNameRu || b.orgNameRu || ''}</span>
+                        </div>
+                        <span class="font-bold text-emerald-400 num-font text-xs">${b.ytm ? b.ytm.toFixed(1) + '%' : ''}</span>
+                    </div>
+                `).join('');
+            }
+            resultsBox.classList.remove('hidden');
+        }
+
+        // ================= TERMINAL TABS & SUB-VIEWS =================
+        function switchTerminalTab(tabId) {
+            ['screener', 'aix', 'arbitrage', 'yield-curve', 'whales'].forEach(id => {
+                const tabEl = document.getElementById(`termTab-${id}`);
+                const btnEl = document.getElementById(`termTabBtn-${id}`);
+                if (tabEl) tabEl.classList.add('hidden');
+                if (btnEl) {
+                    btnEl.classList.remove('bg-blue-600', 'text-white');
+                    btnEl.classList.add('bg-[#161D2B]', 'text-slate-400');
+                }
+            });
+
+            const targetTab = document.getElementById(`termTab-${tabId}`);
+            const targetBtn = document.getElementById(`termTabBtn-${tabId}`);
+            if (targetTab) targetTab.classList.remove('hidden');
+            if (targetBtn) {
+                targetBtn.classList.add('bg-blue-600', 'text-white');
+                targetBtn.classList.remove('bg-[#161D2B]', 'text-slate-400');
+            }
+
+            if (tabId === 'aix') fetchAixInstruments();
+            if (tabId === 'arbitrage') fetchArbitrage();
+            if (tabId === 'yield-curve') loadTerminalYieldCurve();
+        }
+
+        // ================= AIX MARKET & DEPTH =================
+        async function fetchAixInstruments() {
+            const search = document.getElementById('aixFilterSearch')?.value || '';
+            const assetClass = document.getElementById('aixFilterAssetClass')?.value || '';
+            const currency = document.getElementById('aixFilterCurrency')?.value || '';
+
+            let url = `${API_BASE}/aix/instruments?limit=250`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (assetClass) url += `&assetClass=${encodeURIComponent(assetClass)}`;
+            if (currency) url += `&currency=${encodeURIComponent(currency)}`;
+
+            try {
+                const res = await fetch(url);
+                currentAixData = await res.json();
+                renderAixTable(currentAixData);
+                const countSummary = document.getElementById('aixTableCountSummary');
+                if (countSummary) countSummary.textContent = `Показано ${currentAixData.length} инструментов AIX`;
+            } catch (err) {
+                console.error('Error fetching AIX instruments:', err);
+            }
+        }
+
+        function debounceAixFilter() {
+            clearTimeout(aixDebounceTimer);
+            aixDebounceTimer = setTimeout(fetchAixInstruments, 300);
+        }
+
+        function renderAixTable(items) {
+            const tbody = document.getElementById('aixTableBody');
+            if (!tbody) return;
+            if (!items || items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-slate-500">Инструменты AIX не найдены</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => {
+                const price = item.lastTrade != null ? item.lastTrade : item.referencePrice;
+                const prStr = price != null ? formatMoneyStr(price) : '—';
+                const cur = item.currency || '—';
+                const chg = item.percentChange;
+                let chgBadge = '<span class="text-slate-500 font-mono">0.00%</span>';
+                if (chg != null && chg > 0) {
+                    chgBadge = `<span class="text-emerald-400 font-bold font-mono">+${chg.toFixed(2)}%</span>`;
+                } else if (chg != null && chg < 0) {
+                    chgBadge = `<span class="text-rose-400 font-bold font-mono">${chg.toFixed(2)}%</span>`;
+                }
+
+                let classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Other</span>';
+                if (item.assetClass === 'Equity' || item.assetClass === 'Equities') {
+                    classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">Акция</span>';
+                } else if (item.assetClass === 'Debt' || item.assetClass === 'Bonds') {
+                    classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">Бонд</span>';
+                } else if (item.nav != null && item.nav.length > 0) {
+                    classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ETF/ETN</span>';
+                }
+
+                const navStr = item.nav ? `<span class="font-bold text-emerald-400 font-mono">${item.nav} ${item.navCurrency || ''}</span>` : '—';
+                const volStr = item.volume ? Number(item.volume).toLocaleString() : '—';
+
+                return `
+                    <tr class="hover:bg-[#151B27] transition select-none group">
+                        <td class="px-3 py-2.5 font-bold font-mono text-white">
+                            <span class="group-hover:text-indigo-400 transition">${item.secCode}</span>
+                            <span class="text-[10px] text-slate-500 block font-normal">${item.isin || ''}</span>
+                        </td>
+                        <td class="px-3 py-2.5 text-slate-300 max-w-[220px] truncate">
+                            <span class="font-medium text-white block truncate">${item.name || item.secCode}</span>
+                            <span class="text-[10px] text-slate-500 block truncate">${item.issuer || ''}</span>
+                        </td>
+                        <td class="px-3 py-2.5 text-center">${classBadge}</td>
+                        <td class="px-3 py-2.5 text-center font-mono text-slate-300">${cur}</td>
+                        <td class="px-3 py-2.5 text-right num-font font-bold text-white">${prStr}</td>
+                        <td class="px-3 py-2.5 text-right num-font">${chgBadge}</td>
+                        <td class="px-3 py-2.5 text-right num-font text-slate-300">${volStr}</td>
+                        <td class="px-3 py-2.5 text-right num-font text-slate-400">${item.numberOfTrades || 0}</td>
+                        <td class="px-3 py-2.5 text-center text-xs">${navStr}</td>
+                        <td class="px-3 py-2.5 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="openDepthModal('${item.secCode}', '${item.isin || ''}')" class="px-2 py-1 rounded bg-[#1A2234] hover:bg-indigo-600 text-[11px] text-indigo-300 hover:text-white transition flex items-center gap-1 font-medium">
+                                    <span>Стакан L2</span>
+                                </button>
+                                <button onclick="compareSymbolWithKase('${item.secCode}')" class="px-2 py-1 rounded bg-[#161D2B] hover:bg-blue-600 text-[11px] text-slate-300 hover:text-white transition font-medium">
+                                    <span>Арбитраж</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function syncAixData() {
+            try {
+                const countSummary = document.getElementById('aixTableCountSummary');
+                if (countSummary) countSummary.textContent = 'Синхронизация с AIX...';
+                await fetch(`${API_BASE}/aix/sync`, { method: 'POST' });
+                await fetchAixInstruments();
+                alert('Данные AIX успешно обновлены из Astana International Exchange!');
+            } catch (err) {
+                console.error(err);
+                alert('Ошибка при синхронизации AIX.');
+            }
+        }
+
+        // ================= ARBITRAGE (KASE ⇄ AIX) =================
+        async function fetchArbitrage() {
+            const tbody = document.getElementById('arbitrageTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-400">Поиск кросс-листинговых бумаг и расчет спредов...</td></tr>`;
+
+            try {
+                const res = await fetch(`${API_BASE}/aix/arbitrage`);
+                currentArbitrageData = await res.json();
+                renderArbitrageTable(currentArbitrageData);
+            } catch (err) {
+                console.error('Error fetching arbitrage:', err);
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-rose-400">Не удалось загрузить данные арбитража.</td></tr>`;
+            }
+        }
+
+        function renderArbitrageTable(items) {
+            const tbody = document.getElementById('arbitrageTableBody');
+            if (!tbody) return;
+            if (!items || items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-12 text-slate-500">Нет доступных пар для арбитража на текущий момент.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(arb => {
+                const kasePr = arb.kasePrice != null ? formatMoneyStr(arb.kasePrice) : '—';
+                const aixPr = arb.aixPrice != null ? formatMoneyStr(arb.aixPrice) : '—';
+                const cur = arb.currency || '₸';
+                const spreadPct = arb.spreadPercent != null ? arb.spreadPercent.toFixed(2) : '0.00';
+                const spreadAbs = arb.spreadAbs != null ? formatMoneyStr(arb.spreadAbs) : '0';
+
+                let badge = '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Паритет</span>';
+                if (arb.cheaperExchange === 'AIX') {
+                    badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Дешевле на AIX (-${spreadPct}%)</span>`;
+                } else if (arb.cheaperExchange === 'KASE') {
+                    badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">Дешевле на KASE (-${spreadPct}%)</span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-[#151B27] transition select-none">
+                        <td class="px-3 py-3 font-bold text-white">
+                            <span class="block">${arb.companyName}</span>
+                            <span class="text-[10px] text-slate-500 font-mono font-normal">ISIN: ${arb.isin}</span>
+                        </td>
+                        <td class="px-3 py-3 text-right">
+                            <span class="font-bold text-blue-400 block font-mono">${kasePr} ${cur}</span>
+                            <span class="text-[10px] text-slate-500 font-mono">Тикер: ${arb.kaseCode}</span>
+                        </td>
+                        <td class="px-3 py-3 text-right">
+                            <span class="font-bold text-indigo-400 block font-mono">${aixPr} ${cur}</span>
+                            <span class="text-[10px] text-slate-500 font-mono">Тикер: ${arb.aixCode}</span>
+                        </td>
+                        <td class="px-3 py-3 text-center font-mono text-slate-300">${cur}</td>
+                        <td class="px-3 py-3 text-right font-bold text-white">${spreadAbs} ${cur}</td>
+                        <td class="px-3 py-3 text-right font-bold ${Math.abs(parseFloat(spreadPct)) > 1.0 ? 'text-emerald-400 text-sm' : 'text-amber-400'}">${spreadPct}%</td>
+                        <td class="px-3 py-3 text-center">${badge}</td>
+                        <td class="px-3 py-3 text-center">
+                            <button onclick="openDepthModal('${arb.aixCode}', '${arb.isin}')" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1 mx-auto">
+                                <span>Стакан AIX</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function compareSymbolWithKase(symbol) {
+            navigateView('terminal');
+            switchTerminalTab('arbitrage');
+        }
+
+        // ================= LEVEL-2 MARKET DEPTH =================
+        async function openDepthModal(symbol, isin) {
+            currentDepthSymbol = symbol;
+            const modal = document.getElementById('depthModal');
+            document.getElementById('depthModalSymbol').textContent = symbol;
+            document.getElementById('depthModalIsin').textContent = isin ? `ISIN: ${isin}` : '';
+            modal.classList.remove('hidden');
+
+            await refreshCurrentDepth();
+        }
+
+        async function refreshCurrentDepth() {
+            if (!currentDepthSymbol) return;
+            const offersList = document.getElementById('depthOffersList');
+            const bidsList = document.getElementById('depthBidsList');
+            const spreadVal = document.getElementById('depthSpreadVal');
+            const updateTime = document.getElementById('depthUpdateTime');
+
+            offersList.innerHTML = `<span class="text-slate-500 text-[11px] py-1">Загрузка стакана...</span>`;
+            bidsList.innerHTML = `<span class="text-slate-500 text-[11px] py-1">Загрузка стакана...</span>`;
+
+            try {
+                const res = await fetch(`${API_BASE}/aix/depth/${encodeURIComponent(currentDepthSymbol)}`);
+                const depth = await res.json();
+
+                if (updateTime) updateTime.textContent = 'Обновлено: ' + new Date().toLocaleTimeString();
+
+                // Offers (Asks / Sell)
+                const offers = depth.offerRows || [];
+                const bids = depth.bidRows || [];
+
+                let maxVol = 1;
+                offers.forEach(o => { if (o.volume > maxVol) maxVol = o.volume; });
+                bids.forEach(b => { if (b.volume > maxVol) maxVol = b.volume; });
+
+                if (offers.length === 0) {
+                    offersList.innerHTML = `<div class="text-slate-500 py-1 text-[11px]">(нет заявок на продажу)</div>`;
+                } else {
+                    const revOffers = [...offers].reverse();
+                    offersList.innerHTML = revOffers.map(o => {
+                        const pct = Math.min(100, Math.max(5, (o.volume / maxVol) * 100));
+                        return `
+                            <div class="relative py-1 px-2 flex items-center justify-between rounded overflow-hidden">
+                                <div class="absolute inset-y-0 right-0 bg-rose-500/15 pointer-events-none" style="width: ${pct}%"></div>
+                                <span class="relative text-slate-300">${o.volume.toLocaleString()} шт.</span>
+                                <span class="relative font-bold text-rose-400">${o.price != null ? o.price.toFixed(2) : '—'}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Spread calculation
+                const bestAsk = (offers.length > 0 && offers[0].price != null) ? offers[0].price : null;
+                const bestBid = (bids.length > 0 && bids[0].price != null) ? bids[0].price : null;
+                if (bestAsk != null && bestBid != null) {
+                    const sp = bestAsk - bestBid;
+                    const spPct = (sp / bestAsk) * 100;
+                    spreadVal.textContent = `${sp.toFixed(2)} (${spPct.toFixed(2)}%)`;
+                } else {
+                    spreadVal.textContent = '—';
+                }
+
+                // Bids (Buy)
+                if (bids.length === 0) {
+                    bidsList.innerHTML = `<div class="text-slate-500 py-1 text-[11px]">(нет заявок на покупку)</div>`;
+                } else {
+                    bidsList.innerHTML = bids.map(b => {
+                        const pct = Math.min(100, Math.max(5, (b.volume / maxVol) * 100));
+                        return `
+                            <div class="relative py-1 px-2 flex items-center justify-between rounded overflow-hidden">
+                                <div class="absolute inset-y-0 right-0 bg-emerald-500/15 pointer-events-none" style="width: ${pct}%"></div>
+                                <span class="relative text-slate-300">${b.volume.toLocaleString()} шт.</span>
+                                <span class="relative font-bold text-emerald-400">${b.price != null ? b.price.toFixed(2) : '—'}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+            } catch (err) {
+                console.error(err);
+                offersList.innerHTML = `<span class="text-rose-500">Ошибка загрузки</span>`;
+                bidsList.innerHTML = `<span class="text-rose-500">Ошибка загрузки</span>`;
+            }
+        }
+
+        function closeDepthModal() {
+            const modal = document.getElementById('depthModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function formatMoneyStr(val) {
+            if (val == null) return '—';
+            return Math.round(val).toLocaleString();
+        }
+
+        function toggleFilterDrawer() {
+            const panel = document.getElementById('terminalFilterPanel');
+            panel.classList.toggle('hidden');
+        }
+
+        let debounceTimer;
+        function debounceFilter() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(fetchBonds, 300);
+        }
+
+        async function loadTerminalYieldCurve() {
+            try {
+                const res = await fetch(`${API_BASE}/bonds/yield-curve?currency=KZT`);
+                const data = await res.json();
+
+                const sovereignSorted = data.sovereignCurve
+                    .filter(p => p.yearsToMaturity != null && p.ytm != null && p.ytm < 40)
+                    .sort((a, b) => a.yearsToMaturity - b.yearsToMaturity);
+
+                const corporatePoints = data.corporatePoints
+                    .filter(p => p.yearsToMaturity != null && p.ytm != null && p.ytm < 40);
+
+                const ctx = document.getElementById('termYieldCurveCanvas').getContext('2d');
+                if (yieldCurveInstance) yieldCurveInstance.destroy();
+
+                yieldCurveInstance = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'Суверенная кривая ГЦБ Минфина РК',
+                                data: sovereignSorted.map(p => ({ x: p.yearsToMaturity, y: p.ytm, code: p.code, name: p.name })),
+                                showLine: true,
+                                borderColor: '#3B82F6',
+                                backgroundColor: '#3B82F6',
+                                borderWidth: 2.5,
+                                pointRadius: 3
+                            },
+                            {
+                                label: 'Корпоративные облигации',
+                                data: corporatePoints.map(p => ({ x: p.yearsToMaturity, y: p.ytm, code: p.code, name: p.name })),
+                                showLine: false,
+                                backgroundColor: '#10B981',
+                                pointRadius: 4
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'Срок обращения (Годы)', color: '#94A3B8' }, grid: { color: '#1E2638' }, ticks: { color: '#94A3B8' } },
+                            y: { title: { display: true, text: 'Доходность YTM (%)', color: '#94A3B8' }, grid: { color: '#1E2638' }, ticks: { color: '#94A3B8' } }
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function renderWhales(summary) {
+            const list = document.getElementById('termWhaleAnomaliesList');
+            if (summary.recentAnomalies) {
+                list.innerHTML = summary.recentAnomalies.map(a => `
+                    <div class="py-2 flex items-center justify-between">
+                        <div>
+                            <span class="font-bold text-white font-mono text-xs">${a.code}</span>
+                            <span class="text-[11px] text-slate-400 block">${a.name || ''}</span>
+                        </div>
+                        <span class="text-xs font-bold text-white num-font">${formatKzt(a.metricValue)}</span>
+                    </div>
+                `).join('');
+            }
+            const yList = document.getElementById('termHighYieldAnomaliesList');
+            if (summary.topYieldBonds) {
+                yList.innerHTML = summary.topYieldBonds.map(b => `
+                    <div class="py-2 flex items-center justify-between">
+                        <div>
+                            <span class="font-bold text-white font-mono text-xs">${b.code}</span>
+                            <span class="text-[11px] text-slate-400 block">${b.name || ''}</span>
+                        </div>
+                        <span class="text-xs font-bold text-emerald-400 num-font">${b.ytm ? b.ytm.toFixed(1) + '%' : ''}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // ================= DRAWER & PASSPORT =================
+        async function openDrawer(id) {
+            const drawer = document.getElementById('inspectorDrawer');
+            const backdrop = document.getElementById('drawerBackdrop');
+            drawer.classList.remove('translate-x-full');
+            backdrop.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`${API_BASE}/instruments/${id}`);
+                const data = await res.json();
+                currentDrawerInstrument = data;
+
+                const instr = data.instrument;
+                const ticker = data.ticker;
+                const effYield = data.effectiveYield != null ? data.effectiveYield : (ticker?.cupon != null ? ticker.cupon : null);
+
+                const curr = data.resolvedCurrency || ticker?.currency || instr.currencyType || 'KZT';
+                const currSign = curr === 'USD' ? '$' : (curr === 'EUR' ? '€' : '₸');
+
+                document.getElementById('drawerCode').textContent = instr.code;
+                document.getElementById('drawerName').textContent = instr.orgNameRu || instr.orgShortNameRu || '';
+                document.getElementById('drawerSecTypeBadge').textContent = (instr.secType || 'BOND').toUpperCase();
+                
+                document.getElementById('drawerPrice').textContent = instr.price != null 
+                    ? (instr.price > 150 ? formatCurrency(instr.price, currSign) : instr.price.toFixed(2) + '%') 
+                    : '-';
+                document.getElementById('drawerYtm').textContent = effYield ? effYield.toFixed(2) + '%' : '-';
+
+                // Format coupon (fixed or floating)
+                const c1 = ticker?.cupon;
+                const c2 = ticker?.cupon2;
+                let cuponText = '-';
+                if (c1 != null && c2 != null && c1 > 0 && c2 > 0 && c1 !== c2) {
+                    cuponText = `${Math.max(c1, c2).toFixed(2)}% (плавающий: маржа ${Math.min(c1, c2).toFixed(2)}%)`;
+                } else if (c1 != null && c1 > 0) {
+                    cuponText = c1.toFixed(2) + '%';
+                } else if (c2 != null && c2 > 0) {
+                    cuponText = c2.toFixed(2) + '%';
+                }
+                document.getElementById('drawerCupon').textContent = cuponText;
+
+                calculateDrawerProfit();
+
+                // Market makers
+                const mmList = document.getElementById('drawerMarketMakersList');
+                if (!data.marketMakers || data.marketMakers.length === 0) {
+                    mmList.innerHTML = `<span class="text-slate-600 font-mono">Маркетмейкеры отсутствуют</span>`;
+                } else {
+                    mmList.innerHTML = data.marketMakers.map(mm => `
+                        <div class="p-2 rounded bg-[#090B10] border border-[#1E2638] flex items-center justify-between">
+                            <span class="font-bold text-white font-mono">${mm.orgCode}</span>
+                            <span class="text-slate-400 truncate max-w-[260px]">${mm.orgShortNameRu || mm.orgNameRu || ''}</span>
+                        </div>
+                    `).join('');
+                }
+
+                // History
+                const histBody = document.getElementById('drawerPriceHistoryBody');
+                if (!data.priceHistory || data.priceHistory.length === 0) {
+                    histBody.innerHTML = `<tr><td colspan="4" class="text-center py-2 text-slate-600">История пуста</td></tr>`;
+                } else {
+                    histBody.innerHTML = data.priceHistory.slice(0, 8).map(h => `
+                        <tr class="py-1">
+                            <td class="text-slate-400">${new Date(h.recordedAt).toLocaleTimeString()}</td>
+                            <td class="text-right text-white">${h.price ? (h.price > 150 ? formatCurrency(h.price, currSign) : h.price.toFixed(2) + '%') : '-'}</td>
+                            <td class="text-right text-emerald-400">${h.bestBid ? (h.bestBid > 150 ? formatCurrency(h.bestBid, currSign) : h.bestBid.toFixed(2) + '%') : '-'}</td>
+                            <td class="text-right text-rose-400">${h.bestOffer ? (h.bestOffer > 150 ? formatCurrency(h.bestOffer, currSign) : h.bestOffer.toFixed(2) + '%') : '-'}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function closeDrawer() {
+            document.getElementById('inspectorDrawer').classList.add('translate-x-full');
+            document.getElementById('drawerBackdrop').classList.add('hidden');
+        }
+
+        function calculateDrawerProfit() {
+            if (!currentDrawerInstrument) return;
+            const instr = currentDrawerInstrument.instrument;
+            const ticker = currentDrawerInstrument.ticker;
+            const sum = parseFloat(document.getElementById('drawerCalcSum').value) || 1000000;
+            const ytm = currentDrawerInstrument.effectiveYield || ticker?.cupon || ticker?.cupon2 || 0;
+            const annualProfit = sum * (ytm / 100);
+
+            const curr = currentDrawerInstrument.resolvedCurrency || ticker?.currency || instr.currencyType || 'KZT';
+            const currSign = curr === 'USD' ? '$' : (curr === 'EUR' ? '€' : '₸');
+
+            document.getElementById('drawerCalcAnnualProfit').textContent = formatCurrency(annualProfit, currSign);
+
+            const nominal = currentDrawerInstrument.faceValue || 1000;
+            const pricePct = (instr.price && instr.price <= 150 ? instr.price : 100) / 100;
+            const costPerBond = instr.price && instr.price > 150 ? instr.price : nominal * pricePct;
+            const lots = costPerBond > 0 ? Math.floor(sum / costPerBond) : 0;
+            document.getElementById('drawerCalcLotsCount').textContent = `~ ${lots.toLocaleString()} шт. (по ${formatCurrency(costPerBond, currSign)})`;
+
+            const years = currentDrawerInstrument.yearsToMaturity || (instr.dtm ? instr.dtm / 365.25 : 1.0);
+            const totalProfit = annualProfit * years;
+            document.getElementById('drawerCalcTotalPayout').textContent = `+ ${formatCurrency(totalProfit, currSign)} за ${years.toFixed(1)} г.`;
+        }
+
+        function printInstrumentPassport() {
+            if (!currentDrawerInstrument) return;
+            const instr = currentDrawerInstrument.instrument;
+            const ticker = currentDrawerInstrument.ticker;
+            const effYield = currentDrawerInstrument.effectiveYield || ticker?.cupon;
+            const ytm = effYield ? effYield.toFixed(2) + '%' : '-';
+            const cupon = ticker?.cupon ? ticker.cupon.toFixed(2) + '%' : '-';
+            const finishDate = ticker?.finishDate || instr.repaymentStartDate || '-';
+            const issuer = instr.orgNameRu || instr.orgShortNameRu || instr.code;
+            const curr = currentDrawerInstrument.resolvedCurrency || ticker?.currency || instr.currencyType || 'KZT';
+            const nominal = currentDrawerInstrument.faceValue || 1000;
+
+            const printWindow = window.open('', '', 'width=800,height=600');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Инвестиционный паспорт: ${instr.code}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 30px; color: #111; line-height: 1.6; }
+                        h1 { margin-bottom: 5px; }
+                        .badge { display: inline-block; padding: 4px 8px; background: #eee; border-radius: 4px; font-weight: bold; font-size: 12px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+                        th { background-color: #f8f9fa; }
+                        .tax-free { background: #e6f4ea; padding: 10px; border-radius: 6px; margin-top: 20px; font-size: 13px; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Инвестиционный паспорт: ${instr.code}</h1>
+                    <div><span class="badge">KASE: ${instr.secType.toUpperCase()}</span> <span>${issuer}</span></div>
+                    <table>
+                        <tr><th>Параметр</th><th>Значение</th></tr>
+                        <tr><td>Доходность к погашению (YTM)</td><td><strong>${ytm}</strong></td></tr>
+                        <tr><td>Купонная ставка</td><td>${cupon} годовых</td></tr>
+                        <tr><td>Номинал одной облигации</td><td>${nominal} ${curr}</td></tr>
+                        <tr><td>Дата полного погашения</td><td>${finishDate}</td></tr>
+                        <tr><td>Дней до погашения (DTM)</td><td>${instr.dtm || '-'} дн.</td></tr>
+                        <tr><td>Валюта расчетов</td><td>${curr}</td></tr>
+                    </table>
+                    <div class="tax-free">
+                        <strong>Налоговая льгота в РК:</strong> Доходы по этой облигации (купоны и прирост стоимости) на 100% освобождены от индивидуального подоходного налога (ИПН 0%) согласно ст. 341 Налогового кодекса Республики Казахстан.
+                    </div>
+                    <p style="margin-top: 30px; font-size: 11px; color: #777;">Сформировано в KASE Pro Terminal • Дата: ${new Date().toLocaleDateString()}</p>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); }, 250);
+        }
+
+        function formatCurrency(val, sign) {
+            if (val == null) return '-- ' + (sign || '₸');
+            return Math.round(val).toLocaleString() + ' ' + (sign || '₸');
+        }
+
+        function formatKzt(val) {
+            if (val == null) return '-- ₸';
+            return Math.round(val).toLocaleString() + ' ₸';
+        }
+
+        function formatKztCompact(val) {
+            if (val == null) return '-';
+            const num = parseFloat(val);
+            if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + ' млрд ₸';
+            if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + ' млн ₸';
+            return Math.round(num).toLocaleString() + ' ₸';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kase_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kase_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-0000}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - kase_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kase_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: ${DOCKER_IMAGE:-ghcr.io/kabarbekn/yesimde-stocks:latest}
+    build:
+      context: ./kase-stock-exchange-parser
+      dockerfile: Dockerfile
+    container_name: kase_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_JDBC_URL: jdbc:postgresql://postgres:5432/kase_db
+      DB_R2DBC_URL: r2dbc:postgresql://postgres:5432/kase_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: "${DB_PASSWORD:-0000}"
+      PORT: 8080
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_BOT_USERNAME: "${TELEGRAM_BOT_USERNAME:-KaseRadarBot}"
+      TELEGRAM_BOT_ENABLED: "${TELEGRAM_BOT_ENABLED:-true}"
+    ports:
+      - "8080:8080"
+
+volumes:
+  kase_pgdata:

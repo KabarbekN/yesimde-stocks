@@ -82,6 +82,18 @@
 			<artifactId>jsoup</artifactId>
 			<version>1.21.1</version>
 		</dependency>
+
+		<!-- Telegram Bot Official Java Starter for Spring Boot 3 -->
+		<dependency>
+			<groupId>org.telegram</groupId>
+			<artifactId>telegrambots-springboot-longpolling-starter</artifactId>
+			<version>7.10.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.telegram</groupId>
+			<artifactId>telegrambots-client</artifactId>
+			<version>7.10.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
