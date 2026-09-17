@@ -3,12 +3,14 @@ package kz.nurgissa.kasestockexchangeparser.telegram;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.InstrumentDetailDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.SubscriberStatsDto;
 import kz.nurgissa.kasestockexchangeparser.model.entities.TelegramSubscriberEntity;
 import kz.nurgissa.kasestockexchangeparser.repositories.TelegramSubscriberRepository;
 import kz.nurgissa.kasestockexchangeparser.service.BondAnalyticsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
@@ -16,6 +18,7 @@ import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
@@ -25,6 +28,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
@@ -44,18 +49,21 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private final TelegramSubscriberRepository subscriberRepository;
     private final BondAnalyticsService analyticsService;
     private final kz.nurgissa.kasestockexchangeparser.service.AixService aixService;
+    private final DatabaseClient databaseClient;
 
     public KaseTelegramBot(
             @Value("${telegram.bot.token}") String botToken,
             TelegramSubscriberRepository subscriberRepository,
             BondAnalyticsService analyticsService,
-            kz.nurgissa.kasestockexchangeparser.service.AixService aixService
+            kz.nurgissa.kasestockexchangeparser.service.AixService aixService,
+            DatabaseClient databaseClient
     ) {
         this.botToken = botToken;
         this.telegramClient = new OkHttpTelegramClient(botToken);
         this.subscriberRepository = subscriberRepository;
         this.analyticsService = analyticsService;
         this.aixService = aixService;
+        this.databaseClient = databaseClient;
         log.info("KASE & AIX Telegram Bot initialized successfully.");
     }
 
@@ -120,8 +128,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             handleArbitrageCommand(chatId, text);
         } else if (text.startsWith("/depth")) {
             handleMarketDepthCommand(chatId, text);
-        } else if (text.equals("⚙️ Мои подписки") || text.startsWith("/settings")) {
+        } else if (text.startsWith("⚙️") || text.startsWith("/settings") || text.equalsIgnoreCase("подписки")) {
             sendSubscriptionSettings(chatId);
+        } else if (text.equals("📊 Статистика") || text.startsWith("/stats")) {
+            sendGlobalStats(chatId);
         } else if (text.equals("🧮 Калькулятор") || text.startsWith("/calc")) {
             handleCalcCommand(chatId, text);
         } else if (text.startsWith("/bond")) {
@@ -161,22 +171,33 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             case "STOCKS" -> sub.setSubStocks(!Boolean.TRUE.equals(sub.getSubStocks()));
                         }
                         sub.setUpdatedAt(LocalDateTime.now());
-                        return subscriberRepository.save(sub);
+                        return subscriberRepository.save(sub)
+                                .flatMap(updatedSub -> getSubscriberStats().map(stats -> Map.entry(updatedSub, stats)));
                     })
-                    .doOnSuccess(updatedSub -> {
-                        EditMessageReplyMarkup edit = EditMessageReplyMarkup.builder()
+                    .doOnSuccess(entry -> {
+                        if (entry == null) return;
+                        TelegramSubscriberEntity updatedSub = entry.getKey();
+                        SubscriberStatsDto stats = entry.getValue();
+
+                        int activeCount = calculateActiveCategories(updatedSub);
+                        int watchlistCount = calculateWatchlistCount(updatedSub);
+
+                        String text = buildSettingsText(activeCount, watchlistCount, updatedSub.getWatchlist(), stats.totalUsers());
+                        EditMessageText edit = EditMessageText.builder()
                                 .chatId(chatId.toString())
                                 .messageId(messageId)
-                                .replyMarkup(buildSettingsInlineKeyboard(updatedSub))
+                                .text(text)
+                                .parseMode("HTML")
+                                .replyMarkup(buildSettingsInlineKeyboard(updatedSub, stats))
                                 .build();
                         try {
                             telegramClient.execute(edit);
                         } catch (Exception e) {
-                            log.error("Failed to update settings keyboard: {}", e.getMessage());
+                            log.error("Failed to update settings message: {}", e.getMessage());
                         }
                     })
                     .subscribe(
-                            updatedSub -> log.debug("Settings updated for chatId {}", chatId),
+                            entry -> log.debug("Settings updated for chatId {}", chatId),
                             e -> log.error("Failed to update settings for chatId {}: {}", chatId, e.getMessage())
                     );
         } else if (data.startsWith("CALC_")) {
@@ -191,23 +212,29 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private void sendWelcome(Long chatId, String name) {
-        String greeting = (name != null && !name.isBlank()) ? ", " + name : "";
-        String text = String.format(
-                "Здравствуйте%s!\n\n" +
-                "Добро пожаловать в <b>KASE & AIX Radar</b> — ваш монитор казахстанского финансового рынка ценных бумаг.\n\n" +
-                "<b>Что умеет бот:</b>\n" +
-                "• 📉 <b>Облигации со скидкой</b> — ловит бумаги ниже номинала (доходность выше рыночной).\n" +
-                "• 🆕 <b>Новые выпуски</b> — сообщает, когда на KASE появляются свежие облигации.\n" +
-                "• ⚖️ <b>Арбитраж KASE ⇄ AIX</b> — находит разницу цен на акции (Казатомпром, Kaspi, Halyk и др.).\n" +
-                "• 🏛️ <b>Биржа AIX</b> — стакан котировок (Level-2 Order Book), ETF и сукук.\n" +
-                "• 🐋 <b>Крупные сделки</b> — отслеживает заходы институциональных фондов (>500 млн ₸).\n" +
-                "• 📅 <b>Купонный дайджест</b> — напоминает по понедельникам, какие купоны выплатят на неделе.\n" +
-                "• 📈 <b>Акции KASE & AIX</b> — котировки и вотчлист избранных акций.\n" +
-                "• 🧮 <b>Калькулятор</b> — наглядно рассчитывает выплаты и прибыль на вложенную сумму.\n\n" +
-                "Выберите действие в меню ниже 👇",
-                greeting
-        );
-        sendMessage(chatId, text, buildMainMenuKeyboard());
+        subscriberRepository.findById(chatId)
+                .map(this::calculateActiveCategories)
+                .defaultIfEmpty(5)
+                .doOnSuccess(activeCount -> {
+                    String greeting = (name != null && !name.isBlank()) ? ", " + name : "";
+                    String text = String.format(
+                            "Здравствуйте%s!\n\n" +
+                            "Добро пожаловать в <b>KASE & AIX Radar</b> — ваш монитор казахстанского финансового рынка ценных бумаг.\n\n" +
+                            "<b>Что умеет бот:</b>\n" +
+                            "• 📉 <b>Облигации со скидкой</b> — ловит бумаги ниже номинала (доходность выше рыночной).\n" +
+                            "• 🆕 <b>Новые выпуски</b> — сообщает, когда на KASE появляются свежие облигации.\n" +
+                            "• ⚖️ <b>Арбитраж KASE ⇄ AIX</b> — находит разницу цен на акции (Казатомпром, Kaspi, Halyk и др.).\n" +
+                            "• 🏛️ <b>Биржа AIX</b> — стакан котировок (Level-2 Order Book), ETF и сукук.\n" +
+                            "• 🐋 <b>Крупные сделки</b> — отслеживает заходы институциональных фондов (>500 млн ₸).\n" +
+                            "• 📅 <b>Купонный дайджест</b> — напоминает по понедельникам, какие купоны выплатят на неделе.\n" +
+                            "• 📈 <b>Акции KASE & AIX</b> — котировки и вотчлист избранных акций.\n" +
+                            "• 🧮 <b>Калькулятор</b> — наглядно рассчитывает выплаты и прибыль на вложенную сумму.\n\n" +
+                            "Выберите действие в меню ниже 👇",
+                            greeting
+                    );
+                    sendMessage(chatId, text, buildMainMenuKeyboard(activeCount));
+                })
+                .subscribe(null, e -> log.error("Error sending welcome message: {}", e.getMessage()));
     }
 
     private void sendDiscounts(Long chatId) {
@@ -310,8 +337,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private void sendSubscriptionSettings(Long chatId) {
-        subscriberRepository.findById(chatId)
-                .defaultIfEmpty(TelegramSubscriberEntity.builder()
+        Mono.zip(
+                subscriberRepository.findById(chatId).defaultIfEmpty(TelegramSubscriberEntity.builder()
                         .chatId(chatId)
                         .subNewBonds(true)
                         .subDiscounts(true)
@@ -319,18 +346,106 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         .subCoupons(true)
                         .subStocks(true)
                         .watchlist("KSPI,HSBK,KZAP,AIRA,KMGZ")
-                        .build())
-                .doOnSuccess(sub -> {
-                    String text = "⚙️ <b>Настройки ваших уведомлений</b>\n\n" +
-                            "Нажмите на кнопку ниже, чтобы включить (✅) или выключить (❌) категорию алертов в реальном времени:\n\n" +
-                            "• <b>Новые облигации</b> — свежие размещения на бирже\n" +
-                            "• <b>Скидки (&lt;95%)</b> — бумаги дешевле номинала\n" +
-                            "• <b>Крупные сделки</b> — заходы институционалов (>500 млн ₸)\n" +
-                            "• <b>Календарь купонов</b> — выплаты на неделю (по понедельникам)\n" +
-                            "• <b>Акции KASE</b> — дневные скачки цен от ±3%";
-                    sendMessage(chatId, text, buildSettingsInlineKeyboard(sub));
-                })
-                .subscribe(null, e -> log.error("Error displaying settings for {}: {}", chatId, e.getMessage()));
+                        .build()),
+                getSubscriberStats()
+        ).doOnSuccess(tuple -> {
+            TelegramSubscriberEntity sub = tuple.getT1();
+            SubscriberStatsDto stats = tuple.getT2();
+
+            int activeCount = calculateActiveCategories(sub);
+            int watchlistCount = calculateWatchlistCount(sub);
+
+            String text = buildSettingsText(activeCount, watchlistCount, sub.getWatchlist(), stats.totalUsers());
+            sendMessage(chatId, text, buildSettingsInlineKeyboard(sub, stats));
+        }).subscribe(null, e -> log.error("Error displaying settings for {}: {}", chatId, e.getMessage()));
+    }
+
+    private void sendGlobalStats(Long chatId) {
+        getSubscriberStats().doOnSuccess(stats -> {
+            String text = String.format("""
+                    📊 <b>Статистика подписок биржевого радара</b>
+
+                    👥 Всего инвесторов в боте: <b>%d</b>
+
+                    <b>Активные подписки по направлениям:</b>
+                    • 🆕 Новые облигации: <b>%d</b> подписчиков
+                    • 📉 Скидки (&lt;95%%): <b>%d</b> подписчиков
+                    • 🐋 Крупные сделки (>500M ₸): <b>%d</b> подписчиков
+                    • 📅 Выплаты купонов: <b>%d</b> подписчиков
+                    • 📈 Акции KASE/AIX: <b>%d</b> подписчиков
+                    """,
+                    stats.totalUsers(),
+                    stats.newBondsCount(),
+                    stats.discountsCount(),
+                    stats.whalesCount(),
+                    stats.couponsCount(),
+                    stats.stocksCount()
+            );
+            sendMessage(chatId, text, null);
+        }).subscribe(null, e -> log.error("Error sending global stats: {}", e.getMessage()));
+    }
+
+    private Mono<SubscriberStatsDto> getSubscriberStats() {
+        String sql = """
+            SELECT
+                COUNT(CASE WHEN sub_new_bonds = true THEN 1 END) AS new_bonds_count,
+                COUNT(CASE WHEN sub_discounts = true THEN 1 END) AS discounts_count,
+                COUNT(CASE WHEN sub_whales = true THEN 1 END) AS whales_count,
+                COUNT(CASE WHEN sub_coupons = true THEN 1 END) AS coupons_count,
+                COUNT(CASE WHEN sub_stocks = true THEN 1 END) AS stocks_count,
+                COUNT(*) AS total_users
+            FROM telegram_subscriber
+        """;
+        return databaseClient.sql(sql)
+                .map(row -> new SubscriberStatsDto(
+                        row.get("new_bonds_count", Long.class) != null ? row.get("new_bonds_count", Long.class) : 0L,
+                        row.get("discounts_count", Long.class) != null ? row.get("discounts_count", Long.class) : 0L,
+                        row.get("whales_count", Long.class) != null ? row.get("whales_count", Long.class) : 0L,
+                        row.get("coupons_count", Long.class) != null ? row.get("coupons_count", Long.class) : 0L,
+                        row.get("stocks_count", Long.class) != null ? row.get("stocks_count", Long.class) : 0L,
+                        row.get("total_users", Long.class) != null ? row.get("total_users", Long.class) : 0L
+                ))
+                .one()
+                .defaultIfEmpty(SubscriberStatsDto.empty())
+                .onErrorReturn(SubscriberStatsDto.empty());
+    }
+
+    private String buildSettingsText(int activeCount, int watchlistCount, String watchlist, long totalUsers) {
+        return String.format("""
+                ⚙️ <b>Управление вашими подписками</b>
+
+                🎯 <b>Ваш статус:</b> %d из 5 категорий активно
+                ⭐ <b>Вотчлист акций:</b> %d тикеров (<code>%s</code>)
+                👥 <b>Всего инвесторов в боте:</b> %d
+
+                <i>Нажимайте на кнопки ниже, чтобы включить (✅) или выключить (❌) категорию алертов. Возле каждой кнопки показано общее число активных подписчиков:</i>
+                """,
+                activeCount,
+                watchlistCount,
+                (watchlist != null && !watchlist.isBlank()) ? watchlist : "нет",
+                totalUsers
+        );
+    }
+
+    private int calculateActiveCategories(TelegramSubscriberEntity sub) {
+        if (sub == null) return 0;
+        int count = 0;
+        if (Boolean.TRUE.equals(sub.getSubNewBonds())) count++;
+        if (Boolean.TRUE.equals(sub.getSubDiscounts())) count++;
+        if (Boolean.TRUE.equals(sub.getSubWhales())) count++;
+        if (Boolean.TRUE.equals(sub.getSubCoupons())) count++;
+        if (Boolean.TRUE.equals(sub.getSubStocks())) count++;
+        return count;
+    }
+
+    private int calculateWatchlistCount(TelegramSubscriberEntity sub) {
+        if (sub == null || sub.getWatchlist() == null || sub.getWatchlist().isBlank()) {
+            return 0;
+        }
+        return (int) Arrays.stream(sub.getWatchlist().split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .count();
     }
 
     private void handleBondCommand(Long chatId, String text) {
@@ -859,36 +974,51 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         }
     }
 
-    private ReplyKeyboardMarkup buildMainMenuKeyboard() {
+    private ReplyKeyboardMarkup buildMainMenuKeyboard(Integer activeCount) {
+        String settingsLabel = (activeCount != null)
+                ? String.format("⚙️ Подписки (%d/5)", activeCount)
+                : "⚙️ Мои подписки";
+
         return ReplyKeyboardMarkup.builder()
                 .keyboardRow(new KeyboardRow("📉 Скидки (<95%)", "🏆 Топ доходностей"))
                 .keyboardRow(new KeyboardRow("📈 Акции KASE", "🏛️ Биржа AIX"))
                 .keyboardRow(new KeyboardRow("⚖️ Арбитраж KASE/AIX", "🧮 Калькулятор"))
-                .keyboardRow(new KeyboardRow("⚙️ Мои подписки", "ℹ️ О боте"))
+                .keyboardRow(new KeyboardRow(settingsLabel, "ℹ️ О боте"))
                 .resizeKeyboard(true)
                 .isPersistent(true)
                 .build();
     }
 
-    private InlineKeyboardMarkup buildSettingsInlineKeyboard(TelegramSubscriberEntity sub) {
+    private ReplyKeyboardMarkup buildMainMenuKeyboard() {
+        return buildMainMenuKeyboard(null);
+    }
+
+    private InlineKeyboardMarkup buildSettingsInlineKeyboard(TelegramSubscriberEntity sub, SubscriberStatsDto stats) {
         String newBondsIcon = Boolean.TRUE.equals(sub.getSubNewBonds()) ? "✅" : "❌";
         String discountsIcon = Boolean.TRUE.equals(sub.getSubDiscounts()) ? "✅" : "❌";
         String whalesIcon = Boolean.TRUE.equals(sub.getSubWhales()) ? "✅" : "❌";
         String couponsIcon = Boolean.TRUE.equals(sub.getSubCoupons()) ? "✅" : "❌";
         String stocksIcon = Boolean.TRUE.equals(sub.getSubStocks()) ? "✅" : "❌";
 
+        long nb = stats != null ? stats.newBondsCount() : 0;
+        long disc = stats != null ? stats.discountsCount() : 0;
+        long wh = stats != null ? stats.whalesCount() : 0;
+        long coup = stats != null ? stats.couponsCount() : 0;
+        long st = stats != null ? stats.stocksCount() : 0;
+        int wlCount = calculateWatchlistCount(sub);
+
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(new InlineKeyboardRow(
-                        InlineKeyboardButton.builder().text(newBondsIcon + " Новые облигации").callbackData("TOGGLE_NEW_BONDS").build(),
-                        InlineKeyboardButton.builder().text(discountsIcon + " Скидки (<95%)").callbackData("TOGGLE_DISCOUNTS").build()
+                        InlineKeyboardButton.builder().text(String.format("%s Новые облигации (%d)", newBondsIcon, nb)).callbackData("TOGGLE_NEW_BONDS").build(),
+                        InlineKeyboardButton.builder().text(String.format("%s Скидки <95%% (%d)", discountsIcon, disc)).callbackData("TOGGLE_DISCOUNTS").build()
                 ))
                 .keyboardRow(new InlineKeyboardRow(
-                        InlineKeyboardButton.builder().text(whalesIcon + " Крупные сделки").callbackData("TOGGLE_WHALES").build(),
-                        InlineKeyboardButton.builder().text(couponsIcon + " Календарь выплат").callbackData("TOGGLE_COUPONS").build()
+                        InlineKeyboardButton.builder().text(String.format("%s Крупные сделки (%d)", whalesIcon, wh)).callbackData("TOGGLE_WHALES").build(),
+                        InlineKeyboardButton.builder().text(String.format("%s Выплаты купонов (%d)", couponsIcon, coup)).callbackData("TOGGLE_COUPONS").build()
                 ))
                 .keyboardRow(new InlineKeyboardRow(
-                        InlineKeyboardButton.builder().text(stocksIcon + " Акции KASE").callbackData("TOGGLE_STOCKS").build(),
-                        InlineKeyboardButton.builder().text("📋 Мой вотчлист").callbackData("VIEW_WATCHLIST").build()
+                        InlineKeyboardButton.builder().text(String.format("%s Акции KASE (%d)", stocksIcon, st)).callbackData("TOGGLE_STOCKS").build(),
+                        InlineKeyboardButton.builder().text(String.format("⭐ Вотчлист (%d)", wlCount)).callbackData("VIEW_WATCHLIST").build()
                 ))
                 .build();
     }
