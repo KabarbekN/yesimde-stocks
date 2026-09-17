@@ -873,9 +873,34 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         return;
                     }
                     long total = list.size();
-                    long equities = list.stream().filter(i -> "Equity".equalsIgnoreCase(i.getAssetClass()) || "Equities".equalsIgnoreCase(i.getAssetClass())).count();
-                    long debt = list.stream().filter(i -> "Debt".equalsIgnoreCase(i.getAssetClass()) || "Bonds".equalsIgnoreCase(i.getAssetClass())).count();
-                    long etfs = list.stream().filter(i -> i.getNav() != null && !i.getNav().isBlank()).count();
+                    long etfs = list.stream().filter(i ->
+                            (i.getNav() != null && !i.getNav().isBlank())
+                            || "ETF".equalsIgnoreCase(i.getSecurityGroup())
+                            || "ETF".equalsIgnoreCase(i.getAssetClass())
+                            || "ETN".equalsIgnoreCase(i.getAssetClass())
+                            || (i.getInstrument() != null && (i.getInstrument().toUpperCase().contains("ETF") || i.getInstrument().toUpperCase().contains("ETN")))
+                    ).count();
+
+                    long equities = list.stream().filter(i ->
+                            !((i.getNav() != null && !i.getNav().isBlank()) || "ETF".equalsIgnoreCase(i.getSecurityGroup()) || "ETF".equalsIgnoreCase(i.getAssetClass()))
+                            && ("EQTY".equalsIgnoreCase(i.getAssetClass())
+                            || "Equity".equalsIgnoreCase(i.getAssetClass())
+                            || "Equities".equalsIgnoreCase(i.getAssetClass())
+                            || "share".equalsIgnoreCase(i.getAssetClass())
+                            || (i.getInstrument() != null && (i.getInstrument().toLowerCase().contains("share")
+                                    || i.getInstrument().toLowerCase().contains("gdr")
+                                    || i.getInstrument().toLowerCase().contains("ads"))))
+                    ).count();
+
+                    long debt = list.stream().filter(i ->
+                            !((i.getNav() != null && !i.getNav().isBlank()) || "ETF".equalsIgnoreCase(i.getSecurityGroup()) || "ETF".equalsIgnoreCase(i.getAssetClass()))
+                            && ("DEBT".equalsIgnoreCase(i.getAssetClass())
+                            || "Debt".equalsIgnoreCase(i.getAssetClass())
+                            || "Bonds".equalsIgnoreCase(i.getAssetClass())
+                            || (i.getInstrument() != null && (i.getInstrument().toLowerCase().contains("bond")
+                                    || i.getInstrument().toLowerCase().contains("sukuk")
+                                    || i.getInstrument().toLowerCase().contains("paper"))))
+                    ).count();
 
                     List<String> keySymbols = List.of("KAP", "KSPI", "HSBK", "AIRA", "KMGZ");
                     List<kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto> keyItems = list.stream()

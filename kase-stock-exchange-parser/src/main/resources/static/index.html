@@ -1499,11 +1499,11 @@
                 }
 
                 let classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Other</span>';
-                if (item.assetClass === 'Equity' || item.assetClass === 'Equities') {
+                if (item.assetClass === 'Equity' || item.assetClass === 'Equities' || item.assetClass === 'EQTY') {
                     classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">Акция</span>';
-                } else if (item.assetClass === 'Debt' || item.assetClass === 'Bonds') {
+                } else if (item.assetClass === 'Debt' || item.assetClass === 'Bonds' || item.assetClass === 'DEBT') {
                     classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">Бонд</span>';
-                } else if (item.nav != null && item.nav.length > 0) {
+                } else if ((item.nav != null && item.nav.length > 0) || item.assetClass === 'ETF' || item.securityGroup === 'ETF') {
                     classBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ETF/ETN</span>';
                 }
 

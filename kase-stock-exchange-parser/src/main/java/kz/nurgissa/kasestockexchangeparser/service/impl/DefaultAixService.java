@@ -87,12 +87,14 @@ public class DefaultAixService implements AixService {
     }
 
     private Mono<Void> updateEtfNav(AixInstrumentDto etf) {
-        if (etf.getSecCode() == null || etf.getNav() == null) {
+        if (etf.getSecCode() == null || etf.getSecCode().isBlank()) {
             return Mono.empty();
         }
         BigDecimal nav = null;
         try {
-            nav = new BigDecimal(etf.getNav().trim());
+            if (etf.getNav() != null && !etf.getNav().isBlank()) {
+                nav = new BigDecimal(etf.getNav().trim());
+            }
         } catch (Exception ignored) {}
 
         final BigDecimal finalNav = nav;
@@ -100,9 +102,39 @@ public class DefaultAixService implements AixService {
                 .flatMap(entity -> {
                     entity.setNav(finalNav);
                     entity.setNavCurrency(etf.getNavCurrency() != null ? etf.getNavCurrency() : etf.getCurrency());
+                    if (etf.getReferencePrice() != null) entity.setReferencePrice(etf.getReferencePrice());
+                    if (etf.getOfferPrice() != null) entity.setOfferPrice(etf.getOfferPrice());
+                    if (etf.getPreviousClose() != null) entity.setPreviousClose(etf.getPreviousClose());
                     entity.setUpdatedAt(LocalDateTime.now());
                     return aixRepository.save(entity);
                 })
+                .switchIfEmpty(Mono.defer(() -> {
+                    AixInstrumentEntity newEntity = AixInstrumentEntity.builder()
+                            .secCode(etf.getSecCode().trim().toUpperCase())
+                            .isin(etf.getIsin())
+                            .issuer(etf.getIssuer())
+                            .shortName(etf.getShortName() != null ? etf.getShortName() : etf.getName())
+                            .instrument(etf.getInstrument() != null ? etf.getInstrument() : "ETF/ETN")
+                            .segment("ETF")
+                            .assetClass("ETF")
+                            .securityGroup("ETF")
+                            .currency(etf.getCurrency() != null ? etf.getCurrency().trim().toUpperCase() : "USD")
+                            .state(etf.getState() != null ? etf.getState() : "Active")
+                            .referencePrice(etf.getReferencePrice())
+                            .bidPrice(etf.getBidPrice())
+                            .bidQty(etf.getBidQty())
+                            .offerPrice(etf.getOfferPrice())
+                            .offerQty(etf.getOfferQty())
+                            .lastTrade(etf.getLastTrade())
+                            .previousClose(etf.getPreviousClose())
+                            .nav(finalNav)
+                            .navCurrency(etf.getNavCurrency() != null ? etf.getNavCurrency() : etf.getCurrency())
+                            .numberOfTrades(etf.getNumberOfTrades() != null ? etf.getNumberOfTrades() : 0)
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+                    return template.insert(AixInstrumentEntity.class).using(newEntity);
+                }))
+                .onErrorResume(DuplicateKeyException.class, ex -> Mono.empty())
                 .then();
     }
 
@@ -119,7 +151,16 @@ public class DefaultAixService implements AixService {
         """);
 
         if (assetClass != null && !assetClass.isBlank()) {
-            sql.append(" AND asset_class = '").append(assetClass.replace("'", "")).append("'");
+            String ac = assetClass.trim().toLowerCase();
+            if (ac.contains("eq") || ac.contains("stock") || ac.contains("share")) {
+                sql.append(" AND (asset_class IN ('EQTY', 'Equity', 'Equities') OR LOWER(instrument) LIKE '%share%' OR LOWER(instrument) LIKE '%ads%' OR LOWER(instrument) LIKE '%gdr%')");
+            } else if (ac.contains("debt") || ac.contains("bond") || ac.contains("sukuk")) {
+                sql.append(" AND (asset_class IN ('DEBT', 'Debt', 'Bonds') OR LOWER(instrument) LIKE '%bond%' OR LOWER(instrument) LIKE '%sukuk%')");
+            } else if (ac.contains("etf") || ac.contains("etn")) {
+                sql.append(" AND (asset_class IN ('ETF', 'ETN') OR security_group = 'ETF' OR segment = 'ETF' OR nav IS NOT NULL)");
+            } else {
+                sql.append(" AND asset_class = '").append(assetClass.replace("'", "")).append("'");
+            }
         }
         if (currency != null && !currency.isBlank()) {
             sql.append(" AND currency = '").append(currency.replace("'", "")).append("'");
