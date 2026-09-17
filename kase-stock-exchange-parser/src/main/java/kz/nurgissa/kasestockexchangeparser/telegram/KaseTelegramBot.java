@@ -1,5 +1,6 @@
 package kz.nurgissa.kasestockexchangeparser.telegram;
 
+import kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.InstrumentDetailDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
@@ -31,6 +32,15 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMar
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
+import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
+import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessagecontent.InputTextMessageContent;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResult;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResultArticle;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import reactor.core.publisher.Mono;
 
@@ -87,6 +97,34 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         return this;
     }
 
+    @EventListener(ApplicationReadyEvent.class)
+    public void registerBotCommands() {
+        try {
+            List<BotCommand> commands = List.of(
+                    BotCommand.builder().command("pulse").description("⚡ Пульс рынка KASE и AIX").build(),
+                    BotCommand.builder().command("ta").description("📊 Теханализ и RSI (напр. /ta KSPI)").build(),
+                    BotCommand.builder().command("alert").description("🔔 Поставить лимит-алерт цены").build(),
+                    BotCommand.builder().command("my_alerts").description("📋 Мои активные алерты").build(),
+                    BotCommand.builder().command("threshold").description("⚙️ Настроить порог алертов").build(),
+                    BotCommand.builder().command("stocks").description("📈 Акции KASE и котировки").build(),
+                    BotCommand.builder().command("discounts").description("📉 Облигации со скидкой (<95%)").build(),
+                    BotCommand.builder().command("top").description("🏆 Топ доходностей облигаций").build(),
+                    BotCommand.builder().command("arbitrage").description("⚖️ Арбитраж цен KASE ⇄ AIX").build(),
+                    BotCommand.builder().command("aix").description("🏛️ Биржа AIX (акции, стакан, ETF)").build(),
+                    BotCommand.builder().command("depth").description("📖 Биржевой стакан (напр. /depth KAP)").build(),
+                    BotCommand.builder().command("calc").description("🧮 Калькулятор дохода облигации").build(),
+                    BotCommand.builder().command("bond").description("📄 Карточка облигации").build(),
+                    BotCommand.builder().command("stock").description("📊 Карточка акции").build(),
+                    BotCommand.builder().command("settings").description("⚙️ Управление подписками").build(),
+                    BotCommand.builder().command("help").description("ℹ️ Справка по возможностям").build()
+            );
+            telegramClient.execute(SetMyCommands.builder().commands(commands).build());
+            log.info("Successfully registered {} Telegram bot commands.", commands.size());
+        } catch (Exception e) {
+            log.warn("Failed to register bot commands via Telegram API: {}", e.getMessage());
+        }
+    }
+
     @Override
     public void consume(Update update) {
         try {
@@ -94,6 +132,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 handleTextMessage(update.getMessage());
             } else if (update.hasCallbackQuery()) {
                 handleCallbackQuery(update.getCallbackQuery());
+            } else if (update.hasInlineQuery()) {
+                handleInlineQuery(update.getInlineQuery());
             }
         } catch (Exception e) {
             log.error("Error processing Telegram update: {}", e.getMessage(), e);
@@ -259,6 +299,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             sendMyAlerts(chatId);
         } else if (data.equals("ARBITRAGE")) {
             handleArbitrageCommand(chatId, "/arbitrage");
+        } else if (data.startsWith("DEPTH_")) {
+            String ticker = data.substring("DEPTH_".length());
+            handleMarketDepthCommand(chatId, "/depth " + ticker);
         }
 
     }
@@ -283,6 +326,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "• 🐋 <b>Крупные сделки</b> — отслеживает заходы институциональных фондов (>500 млн ₸).\n" +
                             "• 📅 <b>Купонный дайджест</b> — напоминает по понедельникам, какие купоны выплатят на неделе.\n" +
                             "• 🧮 <b>Калькулятор</b> — наглядно рассчитывает выплаты и прибыль на вложенную сумму.\n\n" +
+                            "🔍 <b>Помощь в наборе и поиске:</b>\n" +
+                            "• Нажмите <code>/</code> — Telegram покажет подсказки по всем командам.\n" +
+                            "• Наберите <code>@KaseRadarBot тикер</code> — живой поиск бумаг KASE & AIX прямо в чате!\n\n" +
                             "Выберите действие в меню ниже 👇",
                             greeting
                     );
@@ -506,7 +552,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleBondCommand(Long chatId, String text) {
         String[] parts = text.split("\\s+");
         if (parts.length < 2) {
-            sendMessage(chatId, "Укажите тикер облигации, например:\n<code>/bond BIDBb5</code> или <code>/bond KZTKb3</code>", null);
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию").switchInlineQueryCurrentChat("").build()
+                    ))
+                    .build();
+            sendMessage(chatId, "Укажите тикер облигации, например:\n<code>/bond BIDBb5</code> или <code>/bond KZTKb3</code>\n\n<i>Или выберите через быстрый поиск:</i>", kb);
             return;
         }
         handleQuickTickerLookup(chatId, parts[1].toUpperCase());
@@ -515,7 +566,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleStockCommand(Long chatId, String text) {
         String[] parts = text.split("\\s+");
         if (parts.length < 2) {
-            sendMessage(chatId, "Укажите тикер акции, например:\n<code>/stock KSPI</code> или <code>/stock HSBK</code>", null);
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать акцию").switchInlineQueryCurrentChat("").build()
+                    ))
+                    .build();
+            sendMessage(chatId, "Укажите тикер акции, например:\n<code>/stock KSPI</code> или <code>/stock HSBK</code>\n\n<i>Или выберите через быстрый поиск:</i>", kb);
             return;
         }
         String ticker = parts[1].toUpperCase();
@@ -653,10 +709,16 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleCalcCommand(Long chatId, String text) {
         String[] parts = text.split("\\s+");
         if (parts.length < 3) {
-            sendMessage(chatId, "🧮 <b>Калькулятор доходности</b>\n\n" +
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию").switchInlineQueryCurrentChat("").build()
+                    ))
+                    .build();
+            sendMessage(chatId, "🧮 <b>Калькулятор доходности облигаций</b>\n\n" +
                     "Формат команды:\n<code>/calc ТИКЕР СУММА</code>\n\n" +
                     "<b>Пример:</b>\n" +
-                    "<code>/calc BIDBb5 500000</code> — расчет дохода от вложения 500 000 ₸ в облигацию BI Group.", null);
+                    "<code>/calc BIDBb5 500000</code> — расчет дохода от вложения 500 000 ₸ в облигацию BI Group.\n\n" +
+                    "<i>Или найдите нужную облигацию через быстрый поиск ниже:</i>", kb);
             return;
         }
 
@@ -850,12 +912,18 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleMarketDepthCommand(Long chatId, String text) {
         String[] parts = text.split("\\s+");
         if (parts.length < 2) {
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать бумагу AIX").switchInlineQueryCurrentChat("").build()
+                    ))
+                    .build();
             sendMessage(chatId, "📊 <b>Биржевой стакан котировок AIX (Level-2)</b>\n\n" +
                     "Формат команды: <code>/depth СИМВОЛ</code>\n" +
                     "Примеры:\n" +
                     "• <code>/depth KAP</code> (Казатомпром)\n" +
                     "• <code>/depth KSPI</code> (Kaspi.kz)\n" +
-                    "• <code>/depth AIRA</code> (Air Astana)", null);
+                    "• <code>/depth AIRA</code> (Air Astana)\n\n" +
+                    "<i>Или выберите инструмент через быстрый поиск:</i>", kb);
             return;
         }
         String symbol = parts[1].toUpperCase();
@@ -1167,6 +1235,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                     InlineKeyboardButton.builder().text("🔔 Мои алерты").callbackData("MY_ALERTS").build(),
                                     InlineKeyboardButton.builder().text("⚖️ Арбитраж KASE/AIX").callbackData("ARBITRAGE").build()
                             ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🔍 Быстрый поиск любого тикера").switchInlineQueryCurrentChat("").build()
+                            ))
                             .build();
 
                     sendMessage(chatId, sb.toString(), keyboard);
@@ -1177,7 +1248,17 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleTechnicalAnalysisCommand(Long chatId, String text) {
         String[] parts = text.trim().split("\\s+");
         if (parts.length < 2) {
-            sendMessage(chatId, "💡 Введите тикер акции для анализа, например:\n<code>/ta KSPI</code>\nили <code>/ta AIRA</code>\nили <code>/ta KAP</code> (AIX)", null);
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать акцию").switchInlineQueryCurrentChat("").build()
+                    ))
+                    .build();
+            sendMessage(chatId, "💡 <b>Технический анализ (RSI 14, SMA 20, уровни):</b>\n\n" +
+                    "Введите тикер акции для анализа, например:\n" +
+                    "• <code>/ta KSPI</code>\n" +
+                    "• <code>/ta AIRA</code>\n" +
+                    "• <code>/ta KAP</code> (AIX)\n\n" +
+                    "<i>Или выберите акцию через быстрый поиск:</i>", kb);
             return;
         }
         sendTechnicalAnalysis(chatId, parts[1].trim().toUpperCase());
@@ -1310,6 +1391,11 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         String clean = text.trim();
         String[] parts = clean.split("\\s+");
         if (parts.length < 3) {
+            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                    .keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Выбрать тикер для алерта").switchInlineQueryCurrentChat("").build()
+                    ))
+                    .build();
             sendMessage(chatId, """
                     🔔 <b>Установка лимит-уведомлений (Price Alerts):</b>
 
@@ -1324,7 +1410,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     • <code>/alert AIRA 700</code> — уведомить при росте Air Astana до 700 ₸
 
                     Ваши активные алерты: <code>/my_alerts</code>
-                    """, null);
+
+                    <i>Или выберите тикер через быстрый поиск:</i>
+                    """, kb);
             return;
         }
 
@@ -1512,6 +1600,261 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private String escapeHtml(String text) {
         if (text == null) return "";
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private void handleInlineQuery(InlineQuery inlineQuery) {
+        String rawQuery = inlineQuery.getQuery() != null ? inlineQuery.getQuery().trim() : "";
+        String q = rawQuery.toUpperCase();
+        String queryId = inlineQuery.getId();
+
+        Mono<List<StockItemDto>> kaseStocksMono = analyticsService.getTopStocks(null)
+                .defaultIfEmpty(List.of())
+                .onErrorReturn(List.of());
+
+        Mono<List<AixInstrumentDto>> aixSecuritiesMono = aixService.getInstruments(null, null, rawQuery.isBlank() ? null : rawQuery, 15)
+                .defaultIfEmpty(List.of())
+                .onErrorReturn(List.of());
+
+        Mono<List<BondItemDto>> bondsMono = (q.isBlank()
+                ? analyticsService.getDiscountBonds(95.0)
+                : analyticsService.getBondScreener(null, null, null, null, null, null, null, rawQuery, null, null, 15, 0))
+                .defaultIfEmpty(List.of())
+                .onErrorReturn(List.of());
+
+        Mono.zip(kaseStocksMono, aixSecuritiesMono, bondsMono)
+                .doOnSuccess(tuple -> {
+                    List<StockItemDto> kaseStocks = tuple.getT1();
+                    List<AixInstrumentDto> aixSecurities = tuple.getT2();
+                    List<BondItemDto> bonds = tuple.getT3();
+
+                    List<InlineQueryResult> results = new ArrayList<>();
+
+                    // 1. KASE Stocks
+                    for (StockItemDto s : kaseStocks) {
+                        if (results.size() >= 20) break;
+                        if (s.getCode() == null) continue;
+                        if (!matchesTickerQuery(s.getCode(), s.getName(), q)) continue;
+
+                        BigDecimal price = s.getPrice() != null ? s.getPrice() : s.getClosePrice();
+                        BigDecimal chg = s.getChangePercent();
+                        String sign = (chg != null && chg.compareTo(BigDecimal.ZERO) >= 0) ? "+" : "";
+                        String icon = (chg != null && chg.compareTo(BigDecimal.ZERO) >= 0) ? "🟢" : "🔴";
+                        String chgStr = chg != null ? chg.setScale(2, RoundingMode.HALF_UP).toPlainString() : "0.00";
+                        String cur = s.getCurrency() != null ? s.getCurrency() : "₸";
+
+                        String volStr = s.getVolumeKzt() != null && s.getVolumeKzt().compareTo(BigDecimal.ZERO) > 0
+                                ? String.format(" • Объем: %,.0f ₸", s.getVolumeKzt().doubleValue()).replace(',', ' ')
+                                : "";
+
+                        String title = String.format("📈 %s — %s", s.getCode(), s.getName() != null ? s.getName() : "Акция KASE");
+                        String desc = String.format("%s %s (%s%s%%)%s • KASE",
+                                price != null ? formatMoney(price) : "—", cur, sign, chgStr, volStr);
+
+                        String messageText = String.format(
+                                "📈 <b>%s — %s</b>\n" +
+                                "Биржа: <b>KASE</b> | Валюта: <b>%s</b>\n\n" +
+                                "💵 Текущая цена: <b>%s %s</b> (%s %s%s%%)\n" +
+                                "📊 Объем торгов: <b>%s ₸</b> | Сделок: <b>%d</b>\n\n" +
+                                "💡 <i>Выберите действие для этого инструмента:</i>",
+                                s.getCode(), escapeHtml(s.getName()), cur,
+                                price != null ? formatMoney(price) : "—", cur,
+                                icon, sign, chgStr,
+                                s.getVolumeKzt() != null ? formatMoney(s.getVolumeKzt()) : "0",
+                                s.getDealCount() != null ? s.getDealCount() : 0
+                        );
+
+                        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("📊 Теханализ / RSI").callbackData("TA_" + s.getCode()).build(),
+                                        InlineKeyboardButton.builder().text("🔔 Алерт цены").callbackData("SET_ALERT_" + s.getCode()).build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("⚖️ KASE ⇄ AIX").callbackData("COMPARE_" + s.getCode()).build(),
+                                        InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + s.getCode()).build()
+                                ))
+                                .build();
+
+                        results.add(InlineQueryResultArticle.builder()
+                                .id("kase_" + s.getCode())
+                                .title(title)
+                                .description(desc)
+                                .inputMessageContent(InputTextMessageContent.builder()
+                                        .messageText(messageText)
+                                        .parseMode("HTML")
+                                        .disableWebPagePreview(true)
+                                        .build())
+                                .replyMarkup(keyboard)
+                                .build());
+                    }
+
+                    // 2. AIX Securities
+                    for (AixInstrumentDto aix : aixSecurities) {
+                        if (results.size() >= 35) break;
+                        if (aix.getSecCode() == null) continue;
+                        String name = aix.getShortName() != null ? aix.getShortName()
+                                : (aix.getName() != null ? aix.getName() : aix.getIssuer());
+                        if (!matchesTickerQuery(aix.getSecCode(), name, q)) continue;
+
+                        BigDecimal price = aix.getLastTrade() != null ? aix.getLastTrade()
+                                : (aix.getPreviousClose() != null ? aix.getPreviousClose() : aix.getReferencePrice());
+                        BigDecimal chg = aix.getPercentChange();
+                        String sign = (chg != null && chg.compareTo(BigDecimal.ZERO) >= 0) ? "+" : "";
+                        String chgStr = chg != null ? chg.setScale(2, RoundingMode.HALF_UP).toPlainString() : "0.00";
+                        String cur = aix.getCurrency() != null ? aix.getCurrency() : "KZT";
+
+                        String title = String.format("🏛️ %s — %s (AIX)", aix.getSecCode(), name != null ? name : "AIX");
+                        String desc = String.format("%s %s (%s%s%%) • Биржа AIX",
+                                price != null ? formatMoney(price) : "—", cur, sign, chgStr);
+
+                        String messageText = String.format(
+                                "🏛️ <b>%s — %s</b>\n" +
+                                "Биржа: <b>AIX</b> | Валюта: <b>%s</b>\n\n" +
+                                "💵 Текущая цена: <b>%s %s</b> (%s%s%%)\n" +
+                                "📖 Доступен стакан заявок Level-2 (Order Book).\n\n" +
+                                "💡 <i>Выберите действие для этого инструмента:</i>",
+                                aix.getSecCode(), escapeHtml(name != null ? name : aix.getSecCode()), cur,
+                                price != null ? formatMoney(price) : "—", cur,
+                                sign, chgStr
+                        );
+
+                        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("📖 Стакан котировок").callbackData("DEPTH_" + aix.getSecCode()).build(),
+                                        InlineKeyboardButton.builder().text("📊 Теханализ").callbackData("TA_" + aix.getSecCode()).build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("⚖️ Сравнить с KASE").callbackData("COMPARE_" + aix.getSecCode()).build(),
+                                        InlineKeyboardButton.builder().text("🔔 Лимит цены").callbackData("SET_ALERT_" + aix.getSecCode()).build()
+                                ))
+                                .build();
+
+                        results.add(InlineQueryResultArticle.builder()
+                                .id("aix_" + aix.getSecCode())
+                                .title(title)
+                                .description(desc)
+                                .inputMessageContent(InputTextMessageContent.builder()
+                                        .messageText(messageText)
+                                        .parseMode("HTML")
+                                        .disableWebPagePreview(true)
+                                        .build())
+                                .replyMarkup(keyboard)
+                                .build());
+                    }
+
+                    // 3. Bonds
+                    for (BondItemDto b : bonds) {
+                        if (results.size() >= 48) break;
+                        if (b.getCode() == null) continue;
+                        String name = b.getOrgShortNameRu() != null ? b.getOrgShortNameRu() : b.getOrgNameRu();
+                        if (!matchesTickerQuery(b.getCode(), name, q)) continue;
+
+                        BigDecimal ytm = b.getDohod() != null ? b.getDohod() : b.getYtm();
+                        double priceVal = b.getPrice() != null ? b.getPrice().doubleValue() : 100.0;
+                        double discount = 100.0 - priceVal;
+
+                        String title = String.format("📉 %s — %s (Облигация)", b.getCode(), name != null ? name : "KASE");
+                        String desc = String.format("Цена: %.1f%% %s• YTM: %.2f%% • Купон: %.2f%%",
+                                priceVal,
+                                discount > 0 ? String.format("(скидка %.1f%%) ", discount) : "",
+                                ytm != null ? ytm.doubleValue() : 0.0,
+                                b.getCupon() != null ? b.getCupon().doubleValue() : 0.0);
+
+                        String messageText = String.format(
+                                "📉 <b>%s — %s</b>\n" +
+                                "Тип: <b>Облигация KASE</b>\n\n" +
+                                "💵 Чистая цена: <b>%.2f%%</b>%s\n" +
+                                "📈 Доходность (YTM): <b>%.2f%%</b>\n" +
+                                "💰 Купонная ставка: <b>%.2f%%</b>\n" +
+                                "⏳ Срок до погашения: <b>%s</b>\n\n" +
+                                "💡 <i>Выберите действие для этой облигации:</i>",
+                                b.getCode(), escapeHtml(name != null ? name : b.getCode()),
+                                priceVal, discount > 0 ? String.format(" (Скидка <b>%.1f%%</b>)", discount) : "",
+                                ytm != null ? ytm.doubleValue() : 0.0,
+                                b.getCupon() != null ? b.getCupon().doubleValue() : 0.0,
+                                formatDuration(b.getDtm() != null ? b.getDtm() : 365)
+                        );
+
+                        InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("🧮 Рассчитать доход").callbackData("CALC_" + b.getCode()).build(),
+                                        InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + b.getCode()).build()
+                                ))
+                                .build();
+
+                        results.add(InlineQueryResultArticle.builder()
+                                .id("bond_" + b.getCode() + "_" + (b.getId() != null ? b.getId() : "0"))
+                                .title(title)
+                                .description(desc)
+                                .inputMessageContent(InputTextMessageContent.builder()
+                                        .messageText(messageText)
+                                        .parseMode("HTML")
+                                        .disableWebPagePreview(true)
+                                        .build())
+                                .replyMarkup(keyboard)
+                                .build());
+                    }
+
+                    if (results.isEmpty()) {
+                        results.add(InlineQueryResultArticle.builder()
+                                .id("not_found")
+                                .title("🔍 Ничего не найдено")
+                                .description("По запросу «" + rawQuery + "» бумаги не найдены. Попробуйте KSPI, AIRA, KAP...")
+                                .inputMessageContent(InputTextMessageContent.builder()
+                                        .messageText("🔍 По запросу <code>" + escapeHtml(rawQuery) + "</code> ничего не найдено.\n\nПопробуйте найти:\n• <code>KSPI</code> (Kaspi.kz)\n• <code>AIRA</code> (Air Astana)\n• <code>HSBK</code> (Halyk Bank)\n• <code>KAP</code> (Казатомпром)\n• <code>/pulse</code> (Пульс рынка)")
+                                        .parseMode("HTML")
+                                        .build())
+                                .build());
+                    }
+
+                    try {
+                        AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                                .inlineQueryId(queryId)
+                                .results(results)
+                                .cacheTime(5)
+                                .isPersonal(true)
+                                .build();
+                        telegramClient.execute(answer);
+                    } catch (Exception ex) {
+                        log.error("Failed to answer inline query {}: {}", queryId, ex.getMessage());
+                    }
+                })
+                .subscribe(null, e -> log.error("Error processing inline query: {}", e.getMessage()));
+    }
+
+    private boolean matchesTickerQuery(String code, String name, String query) {
+        if (query == null || query.isBlank()) return true;
+        String q = query.trim().toUpperCase();
+        if (code != null && code.toUpperCase().contains(q)) return true;
+        if (name != null && name.toUpperCase().contains(q)) return true;
+
+        if (q.contains("КАСПИ") || q.contains("KASPI")) {
+            return "KSPI".equalsIgnoreCase(code) || "KSPI.Y".equalsIgnoreCase(code);
+        }
+        if (q.contains("ХАЛЫК") || q.contains("HALYK") || q.contains("НАРОДН")) {
+            return "HSBK".equalsIgnoreCase(code);
+        }
+        if (q.contains("АСТАНА") || q.contains("ASTANA") || q.contains("AIRA")) {
+            return "AIRA".equalsIgnoreCase(code);
+        }
+        if (q.contains("АТОМ") || q.contains("КАП") || q.contains("KAZATOM") || q.contains("УРАН")) {
+            return "KZAP".equalsIgnoreCase(code) || "KAP".equalsIgnoreCase(code);
+        }
+        if (q.contains("ТЕЛЕКОМ") || q.contains("TELECOM")) {
+            return "KZTK".equalsIgnoreCase(code) || "KZTKP".equalsIgnoreCase(code);
+        }
+        if (q.contains("МУНАЙ") || q.contains("НЕФТ") || q.contains("KMG")) {
+            return "KMGZ".equalsIgnoreCase(code);
+        }
+        if (q.contains("ЦЕНТР") || q.contains("CCBN")) {
+            return "CCBN".equalsIgnoreCase(code);
+        }
+        if (q.contains("КЕГОК") || q.contains("KEGC")) {
+            return "KEGC".equalsIgnoreCase(code);
+        }
+        if (q.contains("ФОРТЕ") || q.contains("FORTE") || q.contains("ASBN")) {
+            return "ASBN".equalsIgnoreCase(code);
+        }
+        return false;
     }
 }
 
