@@ -630,7 +630,7 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
 
     @Override
     public Mono<List<StockItemDto>> getTopStocks(List<String> specificTickers) {
-        String sql = """
+        StringBuilder sql = new StringBuilder("""
             SELECT s.id, s.code, COALESCE(s.org_short_name_ru, s.org_name_ru) AS name,
                    s.price, s.close_price, s.trand AS change, s.trand_percent AS change_percent,
                    s.volkzt, s.dealcnt,
@@ -638,10 +638,18 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
             FROM security_instrument s
             LEFT JOIN ticker t ON s.id = t.security_instrument_id
             WHERE s.sec_type IN ('share', 'stock')
-            ORDER BY s.volkzt DESC NULLS LAST
-            LIMIT 50
-        """;
-        return databaseClient.sql(sql)
+        """);
+
+        if (specificTickers != null && !specificTickers.isEmpty()) {
+            String inClause = specificTickers.stream()
+                    .map(t -> "'" + t.replace("'", "").trim().toUpperCase() + "'")
+                    .collect(Collectors.joining(","));
+            sql.append(" AND UPPER(s.code) IN (").append(inClause).append(") ");
+        } else {
+            sql.append(" ORDER BY s.volkzt DESC NULLS LAST LIMIT 50");
+        }
+
+        return databaseClient.sql(sql.toString())
                 .map((row, meta) -> StockItemDto.builder()
                         .code(row.get("code", String.class))
                         .name(row.get("name", String.class))
@@ -655,14 +663,7 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
                         .build()
                 )
                 .all()
-                .collectList()
-                .map(list -> {
-                    if (specificTickers != null && !specificTickers.isEmpty()) {
-                        Set<String> set = specificTickers.stream().map(String::toUpperCase).collect(Collectors.toSet());
-                        return list.stream().filter(s -> set.contains(s.getCode().toUpperCase())).collect(Collectors.toList());
-                    }
-                    return list;
-                });
+                .collectList();
     }
 
     @Override

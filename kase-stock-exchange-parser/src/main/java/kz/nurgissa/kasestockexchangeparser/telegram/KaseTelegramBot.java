@@ -142,9 +142,29 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
     private void handleTextMessage(Message message) {
         Long chatId = message.getChatId();
-        String text = message.getText().trim();
+        String text = message.getText() != null ? message.getText().trim() : "";
         String username = message.getFrom() != null ? message.getFrom().getUserName() : "";
         String firstName = message.getFrom() != null ? message.getFrom().getFirstName() : "";
+
+        // Strip bot username mention if message starts with @... or contains /command@botname
+        // E.g.: "@kase_radar_bot hsbn" -> "hsbn"
+        //       "@kase_radar_bot /calc KZTKb3 500000" -> "/calc KZTKb3 500000"
+        //       "/calc@kase_radar_bot KZTKb3 500000" -> "/calc KZTKb3 500000"
+        //       "@kase_radar_bot" -> ""
+        if (text.startsWith("@")) {
+            int spaceIdx = text.indexOf(' ');
+            if (spaceIdx > 0) {
+                text = text.substring(spaceIdx + 1).trim();
+            } else {
+                text = "";
+            }
+        }
+        text = text.replaceAll("(?i)^(/[a-zA-Z0-9_]+)@[a-zA-Z0-9_]+", "$1").trim();
+
+        if (text.isEmpty()) {
+            sendWelcome(chatId, firstName);
+            return;
+        }
 
         // Register or refresh user info atomically without wiping customized preferences
         subscriberRepository.registerOrUpdate(
@@ -210,7 +230,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 handleNaturalLanguageTaQuery(chatId, text);
             } else if (text.toLowerCase().contains("пульс")) {
                 sendMarketPulse(chatId);
-            } else if (text.length() <= 10 && !text.contains(" ")) {
+            } else if (text.length() <= 16 && !text.contains(" ")) {
                 handleQuickTickerLookup(chatId, text.toUpperCase());
             } else {
                 sendMessage(chatId, "Команда не распознана. Используйте кнопки меню ниже или введите тикер бумаги (например: <code>KZTKb3</code>, <code>KSPI</code>, <code>/ta AIRA</code> или <code>/pulse</code>).", buildMainMenuKeyboard());
@@ -678,19 +698,34 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleBondCommand(Long chatId, String text) {
         String[] parts = text.split("\\s+");
         if (parts.length < 2) {
-            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
-                    .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("📄 BIDBb5").callbackData("BOND_BIDBb5").build(),
-                            InlineKeyboardButton.builder().text("📄 KZTKb3").callbackData("BOND_KZTKb3").build(),
-                            InlineKeyboardButton.builder().text("📄 TEBNb10").callbackData("BOND_TEBNb10").build()
-                    ))
-                    .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию из поиска").switchInlineQueryCurrentChat("").build()
-                    ))
-                    .build();
-            sendMessage(chatId, "📑 <b>Карточка и паспорт облигации</b>\n\n" +
-                    "Выберите облигацию ниже (1 нажатие) или скопируйте команду:\n" +
-                    "<pre>/bond BIDBb5</pre>", kb);
+            analyticsService.getDiscountBonds(100.0)
+                    .defaultIfEmpty(List.of())
+                    .onErrorReturn(List.of())
+                    .doOnSuccess(bonds -> {
+                        List<InlineKeyboardRow> rows = new ArrayList<>();
+                        String exampleTicker = "KZTKb3";
+                        if (bonds != null && !bonds.isEmpty()) {
+                            exampleTicker = bonds.get(0).getCode();
+                            List<InlineKeyboardButton> bondButtons = new ArrayList<>();
+                            for (int i = 0; i < Math.min(bonds.size(), 3); i++) {
+                                String code = bonds.get(i).getCode();
+                                bondButtons.add(InlineKeyboardButton.builder()
+                                        .text("📄 " + code)
+                                        .callbackData("BOND_" + code)
+                                        .build());
+                            }
+                            rows.add(new InlineKeyboardRow(bondButtons));
+                        }
+                        rows.add(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("🔍 Выбрать облигацию из поиска").switchInlineQueryCurrentChat("").build()
+                        ));
+
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder().keyboard(rows).build();
+                        sendMessage(chatId, "📑 <b>Карточка и паспорт облигации</b>\n\n" +
+                                "Выберите облигацию ниже (1 нажатие) или скопируйте команду:\n" +
+                                "<pre>/bond " + exampleTicker + "</pre>", kb);
+                    })
+                    .subscribe();
             return;
         }
         handleQuickTickerLookup(chatId, parts[1].toUpperCase());
@@ -795,8 +830,17 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                     } else {
                                         aixService.getInstruments(null, null, ticker, 5)
                                                 .doOnSuccess(aixList -> {
-                                                    if (aixList != null && !aixList.isEmpty()) {
-                                                        kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto inst = aixList.get(0);
+                                                    kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto exactMatch = null;
+                                                    if (aixList != null) {
+                                                        for (kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto inst : aixList) {
+                                                            if (ticker.equalsIgnoreCase(inst.getSecCode()) || ticker.equalsIgnoreCase(inst.getIsin())) {
+                                                                exactMatch = inst;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                    if (exactMatch != null) {
+                                                        kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto inst = exactMatch;
                                                         BigDecimal pr = inst.getLastTrade() != null ? inst.getLastTrade() : inst.getReferencePrice();
                                                         String cur = inst.getCurrency() != null ? inst.getCurrency() : "";
                                                         InlineKeyboardMarkup aixKb = InlineKeyboardMarkup.builder()
@@ -827,7 +871,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                                                 inst.getSecCode()
                                                         ), aixKb);
                                                     } else {
-                                                        sendMessage(chatId, "Инструмент с тикером <code>" + ticker + "</code> не найден ни на KASE, ни на AIX.", null);
+                                                        handlePartialSearch(chatId, ticker, aixList);
                                                     }
                                                 })
                                                 .subscribe();
@@ -851,37 +895,24 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         couponRate = b.getTicker().getCupon() != null ? b.getTicker().getCupon() : b.getTicker().getCupon2();
                     }
                     BigDecimal ytm = b.getEffectiveYield();
-                    String matDate = (b.getTicker() != null && b.getTicker().getFinishDate() != null)
-                            ? b.getTicker().getFinishDate().toString()
-                            : (b.getInstrument() != null && b.getInstrument().getRepaymentStartDate() != null ? b.getInstrument().getRepaymentStartDate().toString() : "По регламенту");
-                    Integer dtm = b.getInstrument() != null ? b.getInstrument().getDtm() : 365;
-                    BigDecimal volKzt = b.getInstrument() != null ? b.getInstrument().getVolkzt() : BigDecimal.ZERO;
+                    Integer dtm = b.getInstrument() != null ? b.getInstrument().getDtm() : null;
 
                     String msg = String.format(
-                            "📑 <b>Паспорт облигации: %s</b>\n\n" +
-                            "<b>Эмитент:</b> %s\n" +
-                            "<b>Тикер:</b> <code>%s</code>\n" +
-                            "<b>Номинал:</b> %s %s\n" +
-                            "<b>Текущая цена:</b> <b>%.2f%%</b> (~%s %s)\n" +
-                            "<b>Купонная ставка:</b> %.2f%% годовых\n" +
-                            "<b>Доходность к погашению (YTM):</b> <b>%.2f%%</b>\n" +
-                            "<b>Дата погашения:</b> %s (осталось: %s)\n" +
-                            "<b>Объем торгов сегодня:</b> %s ₸\n\n" +
-                            "🧮 <i>Быстрый расчет дохода:</i> нажмите кнопку ниже или скопируйте:\n" +
-                            "<pre>/calc %s 500000</pre>\n" +
-                            "<a href=\"https://kase.kz/ru/bonds/show/%s/\">Открыть страницу на KASE</a>",
-                            escapeHtml(name),
+                            "📑 <b>Паспорт облигации: %s</b> (<code>%s</code>)\n\n" +
+                            "• <b>Эмитент:</b> %s\n" +
+                            "• <b>Текущая цена:</b> <b>%.2f%%</b> (~%s %s / шт.)\n" +
+                            "• <b>Ставка купона:</b> %s%%\n" +
+                            "• <b>Доходность к погашению (YTM):</b> <b>%s%%</b>\n" +
+                            "• <b>Срок до погашения:</b> %s\n" +
+                            "• <b>Объем торгов:</b> %s ₸\n\n" +
+                            "💡 <i>Нажмите кнопку ниже для быстрого расчета доходности на нужную сумму:</i>",
+                            escapeHtml(name), ticker,
                             escapeHtml(issuer),
-                            ticker,
-                            formatMoney(faceVal), cur,
                             price.doubleValue(), formatMoney(buyPrice), cur,
-                            couponRate != null ? couponRate.doubleValue() : 0.0,
-                            ytm != null ? ytm.doubleValue() : 0.0,
-                            matDate,
+                            couponRate != null ? couponRate.setScale(2, RoundingMode.HALF_UP).toPlainString() : "—",
+                            ytm != null ? ytm.setScale(2, RoundingMode.HALF_UP).toPlainString() : "—",
                             formatDuration(dtm),
-                            formatMoney(volKzt),
-                            ticker,
-                            ticker
+                            formatMoney(b.getInstrument() != null ? b.getInstrument().getVolkzt() : BigDecimal.ZERO)
                     );
                     InlineKeyboardMarkup bondKb = InlineKeyboardMarkup.builder()
                             .keyboardRow(new InlineKeyboardRow(
@@ -902,23 +933,118 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 .subscribe();
     }
 
+    private void handlePartialSearch(Long chatId, String query, List<AixInstrumentDto> preloadedAix) {
+        String cleanQ = query.trim();
+        Mono<List<BondItemDto>> bondsMono = analyticsService.getBondScreener(null, null, null, null, null, null, null, cleanQ, "volume", "desc", 6, 0)
+                .defaultIfEmpty(List.of())
+                .onErrorReturn(List.of());
+
+        Mono<List<AixInstrumentDto>> aixMono = (preloadedAix != null && !preloadedAix.isEmpty())
+                ? Mono.just(preloadedAix)
+                : aixService.getInstruments(null, null, cleanQ, 5).defaultIfEmpty(List.of()).onErrorReturn(List.of());
+
+        Mono.zip(bondsMono, aixMono)
+                .doOnSuccess(tuple -> {
+                    List<BondItemDto> bonds = tuple.getT1();
+                    List<AixInstrumentDto> aixSecs = tuple.getT2();
+
+                    if ((bonds == null || bonds.isEmpty()) && (aixSecs == null || aixSecs.isEmpty())) {
+                        sendMessage(chatId, "Инструмент по запросу <code>" + escapeHtml(cleanQ) + "</code> не найден ни на KASE, ни на AIX.\n\n" +
+                                "Попробуйте найти:\n" +
+                                "• <code>KSPI</code> (Kaspi.kz)\n" +
+                                "• <code>HSBK</code> (Halyk Bank)\n" +
+                                "• <code>AIRA</code> (Air Astana)\n" +
+                                "• <code>/discounts</code> (Облигации со скидкой)\n" +
+                                "• <code>/pulse</code> (Пульс рынка)", null);
+                        return;
+                    }
+
+                    StringBuilder sb = new StringBuilder("🔍 <b>Результаты поиска по запросу «" + escapeHtml(cleanQ) + "»:</b>\n\n");
+                    InlineKeyboardMarkup.InlineKeyboardMarkupBuilder kb = InlineKeyboardMarkup.builder();
+
+                    if (bonds != null && !bonds.isEmpty()) {
+                        sb.append("📑 <b>Облигации KASE:</b>\n");
+                        int count = Math.min(bonds.size(), 4);
+                        for (int i = 0; i < count; i++) {
+                            BondItemDto b = bonds.get(i);
+                            String name = b.getOrgShortNameRu() != null ? b.getOrgShortNameRu() : (b.getOrgNameRu() != null ? b.getOrgNameRu() : b.getCode());
+                            BigDecimal yield = b.getDohod() != null ? b.getDohod() : b.getYtm();
+                            sb.append(String.format("• <b>%s</b> (<code>%s</code>): Купон %.2f%% | YTM <b>%.2f%%</b> | Цена: %.2f%%\n",
+                                    escapeHtml(name), b.getCode(),
+                                    b.getCupon() != null ? b.getCupon().doubleValue() : 0.0,
+                                    yield != null ? yield.doubleValue() : 0.0,
+                                    b.getPrice() != null ? b.getPrice().doubleValue() : 100.0));
+
+                            kb.keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📄 " + b.getCode()).callbackData("BOND_" + b.getCode()).build(),
+                                    InlineKeyboardButton.builder().text("🧮 " + b.getCode() + " (500k ₸)").callbackData("CALC_" + b.getCode() + "_500000").build()
+                            ));
+                        }
+                        sb.append("\n");
+                    }
+
+                    if (aixSecs != null && !aixSecs.isEmpty()) {
+                        sb.append("🏛️ <b>Инструменты AIX:</b>\n");
+                        int count = Math.min(aixSecs.size(), 3);
+                        for (int i = 0; i < count; i++) {
+                            AixInstrumentDto a = aixSecs.get(i);
+                            String name = a.getShortName() != null ? a.getShortName() : (a.getName() != null ? a.getName() : a.getSecCode());
+                            BigDecimal price = a.getLastTrade() != null ? a.getLastTrade() : a.getReferencePrice();
+                            sb.append(String.format("• <b>%s</b> (<code>%s</code>): %s %s (%s)\n",
+                                    escapeHtml(name), a.getSecCode(),
+                                    price != null ? formatMoney(price) : "—",
+                                    a.getCurrency() != null ? a.getCurrency() : "",
+                                    a.getAssetClass() != null ? a.getAssetClass() : "-"));
+
+                            kb.keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📊 Стакан " + a.getSecCode()).callbackData("DEPTH_" + a.getSecCode()).build(),
+                                    InlineKeyboardButton.builder().text("⚖️ KASE ⇄ AIX").callbackData("COMPARE_" + a.getSecCode()).build()
+                            ));
+                        }
+                    }
+
+                    kb.keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔍 Другой поиск").switchInlineQueryCurrentChat("").build()
+                    ));
+
+                    sendMessage(chatId, sb.toString(), kb.build());
+                })
+                .subscribe();
+    }
+
     private void handleCalcCommand(Long chatId, String text) {
         String[] parts = text.split("\\s+");
         if (parts.length < 3) {
-            InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
-                    .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🧮 BIDBb5 (500k ₸)").callbackData("CALC_BIDBb5_500000").build(),
-                            InlineKeyboardButton.builder().text("🧮 TEBNb10 (500k ₸)").callbackData("CALC_TEBNb10_500000").build()
-                    ))
-                    .keyboardRow(new InlineKeyboardRow(
-                            InlineKeyboardButton.builder().text("🔍 Выбрать облигацию из поиска").switchInlineQueryCurrentChat("").build()
-                    ))
-                    .build();
-            sendMessage(chatId, "🧮 <b>Калькулятор доходности облигаций</b>\n\n" +
-                    "Формат команды:\n<pre>/calc ТИКЕР СУММА</pre>\n\n" +
-                    "<b>Пример (нажмите кнопку ниже или скопируйте):</b>\n" +
-                    "<pre>/calc BIDBb5 500000</pre>\n\n" +
-                    "<i>Или нажмите на одну из бумаг ниже для мгновенного расчета:</i>", kb);
+            analyticsService.getDiscountBonds(100.0)
+                    .defaultIfEmpty(List.of())
+                    .onErrorReturn(List.of())
+                    .doOnSuccess(bonds -> {
+                        List<InlineKeyboardRow> rows = new ArrayList<>();
+                        String exampleTicker = "KZTKb3";
+                        if (bonds != null && !bonds.isEmpty()) {
+                            exampleTicker = bonds.get(0).getCode();
+                            List<InlineKeyboardButton> bondButtons = new ArrayList<>();
+                            for (int i = 0; i < Math.min(bonds.size(), 2); i++) {
+                                String code = bonds.get(i).getCode();
+                                bondButtons.add(InlineKeyboardButton.builder()
+                                        .text("🧮 " + code + " (500k ₸)")
+                                        .callbackData("CALC_" + code + "_500000")
+                                        .build());
+                            }
+                            rows.add(new InlineKeyboardRow(bondButtons));
+                        }
+                        rows.add(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("🔍 Выбрать облигацию из поиска").switchInlineQueryCurrentChat("").build()
+                        ));
+
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder().keyboard(rows).build();
+                        sendMessage(chatId, "🧮 <b>Калькулятор доходности облигаций</b>\n\n" +
+                                "Формат команды:\n<pre>/calc ТИКЕР СУММА</pre>\n\n" +
+                                "<b>Пример (нажмите кнопку ниже или скопируйте):</b>\n" +
+                                "<pre>/calc " + exampleTicker + " 500000</pre>\n\n" +
+                                "<i>Или нажмите на одну из бумаг ниже для мгновенного расчета:</i>", kb);
+                    })
+                    .subscribe();
             return;
         }
 
@@ -934,7 +1060,34 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         analyticsService.getInstrumentDetailByCode(rawTicker)
                 .doOnSuccess(b -> {
                     if (b == null) {
-                        sendMessage(chatId, "Облигация <code>" + rawTicker + "</code> не найдена.", null);
+                        analyticsService.getBondScreener(null, null, null, null, null, null, null, rawTicker, "volume", "desc", 4, 0)
+                                .defaultIfEmpty(List.of())
+                                .onErrorReturn(List.of())
+                                .doOnSuccess(similarBonds -> {
+                                    if (similarBonds != null && !similarBonds.isEmpty()) {
+                                        StringBuilder sb = new StringBuilder("Облигация с точным тикером <code>" + escapeHtml(rawTicker) + "</code> не найдена.\n\n" +
+                                                "Возможно, вы имели в виду один из выпусков этого эмитента:\n\n");
+                                        InlineKeyboardMarkup.InlineKeyboardMarkupBuilder kbBuilder = InlineKeyboardMarkup.builder();
+                                        for (int i = 0; i < similarBonds.size(); i++) {
+                                            BondItemDto sbond = similarBonds.get(i);
+                                            String name = sbond.getOrgShortNameRu() != null ? sbond.getOrgShortNameRu() : sbond.getOrgNameRu();
+                                            sb.append(String.format("%d. <b>%s</b> (<code>%s</code>)\n   • Купон: %.2f%% | YTM: %.2f%%\n",
+                                                    i + 1, escapeHtml(name != null ? name : sbond.getCode()), sbond.getCode(),
+                                                    sbond.getCupon() != null ? sbond.getCupon().doubleValue() : 0.0,
+                                                    sbond.getDohod() != null ? sbond.getDohod().doubleValue() : 0.0));
+                                            kbBuilder.keyboardRow(new InlineKeyboardRow(
+                                                    InlineKeyboardButton.builder().text("🧮 " + sbond.getCode() + " (" + (long)amount + " ₸)")
+                                                            .callbackData("CALC_" + sbond.getCode() + "_" + (long)amount).build(),
+                                                    InlineKeyboardButton.builder().text("📄 " + sbond.getCode())
+                                                            .callbackData("BOND_" + sbond.getCode()).build()
+                                            ));
+                                        }
+                                        sendMessage(chatId, sb.toString(), kbBuilder.build());
+                                    } else {
+                                        sendMessage(chatId, "Облигация <code>" + escapeHtml(rawTicker) + "</code> не найдена.\n\nПроверьте тикер или выберите активную бумагу через <code>/discounts</code> или <code>/top</code>.", null);
+                                    }
+                                })
+                                .subscribe();
                         return;
                     }
 
@@ -1364,9 +1517,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 • <code>/depth &lt;ТИКЕР&gt;</code> — биржевой стакан AIX (например: <code>/depth KAP</code>)
                 • <code>/arbitrage</code> — межбиржевой арбитраж цен KASE ⇄ AIX
                 • <code>/compare &lt;ТИКЕР&gt;</code> — сравнение цен акции на KASE и AIX (например: <code>/compare KZAP</code>)
-                • <code>/bond &lt;ТИКЕР&gt;</code> — подробная карточка облигации (например: <code>/bond BIDBb5</code>)
+                • <code>/bond &lt;ТИКЕР&gt;</code> — подробная карточка облигации (например: <code>/bond KZTKb3</code>)
                 • <code>/stock &lt;ТИКЕР&gt;</code> — карточка акции (например: <code>/stock KSPI</code>)
-                • <code>/calc &lt;ТИКЕР&gt; &lt;СУММА&gt;</code> — калькулятор дохода (например: <code>/calc BIDBb5 500000</code>)
+                • <code>/calc &lt;ТИКЕР&gt; &lt;СУММА&gt;</code> — калькулятор дохода (например: <code>/calc KZTKb3 500000</code>)
                 • <code>/track &lt;ТИКЕР&gt;</code> — добавить в персональный вотчлист
                 • <code>/settings</code> — управление категориями подписок
                 """;
@@ -2169,6 +2322,15 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         }
         if (q.contains("ФОРТЕ") || q.contains("FORTE") || q.contains("ASBN")) {
             return "ASBN".equalsIgnoreCase(code);
+        }
+        if (q.contains("ХОУМ") || q.contains("HOME") || q.contains("HSBN")) {
+            return code != null && code.toUpperCase().startsWith("HSBN");
+        }
+        if (q.contains("БАНК РБК") || q.contains("RBK") || q.contains("INBN")) {
+            return code != null && code.toUpperCase().startsWith("INBN");
+        }
+        if (q.contains("БЕРЕКЕ") || q.contains("BEREKE") || q.contains("BRKZ")) {
+            return code != null && code.toUpperCase().startsWith("BRKZ");
         }
         return false;
     }
