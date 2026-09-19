@@ -144,6 +144,11 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private void handleTextMessage(Message message) {
+        // If message was posted via inline query (e.g. via @kase_radar_bot), do not process as text command
+        if (message.getViaBot() != null) {
+            return;
+        }
+
         Long chatId = message.getChatId();
         String text = message.getText() != null ? message.getText().trim() : "";
         String username = message.getFrom() != null ? message.getFrom().getUserName() : "";
