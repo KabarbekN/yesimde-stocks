@@ -79,5 +79,22 @@ class TelegramAlertDispatcherServiceTest {
         StepVerifier.create(dispatcherService.checkAndDispatchPriceTargets("KSPI", BigDecimal.valueOf(55000)))
                 .verifyComplete();
     }
+
+    @Test
+    void broadcastWhaleAlert_shouldCompleteGracefullyWhenDisabled() {
+        StepVerifier.create(dispatcherService.broadcastWhaleAlert("MMGZ", "MangistauMunaiGas", BigDecimal.valueOf(1_000_000_000L), null))
+                .verifyComplete();
+    }
+
+    @Test
+    void broadcastNewBondAlert_shouldCompleteGracefullyWhenDisabled() {
+        kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity bond = kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity.builder()
+                .code("BIGDb14")
+                .orgNameRu("BI Development")
+                .boardRu("")
+                .build();
+        StepVerifier.create(dispatcherService.broadcastNewBondAlert(bond, null))
+                .verifyComplete();
+    }
 }
 

@@ -23,6 +23,8 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -135,10 +137,18 @@ public class TelegramAlertDispatcherService {
             return Mono.empty();
         }
 
+        // Night quiet hours: only broadcast whale alerts during active market/day hours (08:30 - 22:00 Almaty time)
+        LocalTime nowAlmaty = LocalTime.now(ZoneId.of("Asia/Almaty"));
+        if (nowAlmaty.isBefore(LocalTime.of(8, 30)) || nowAlmaty.isAfter(LocalTime.of(22, 0))) {
+            return Mono.empty();
+        }
+
         return cooldownRepository.findByAlertTypeAndTicker("WHALE", ticker)
                 .flatMap(cd -> {
-                    long hoursAgo = ChronoUnit.HOURS.between(cd.getLastSentAt(), LocalDateTime.now());
-                    if (hoursAgo < 12) {
+                    BigDecimal lastVol = cd.getLastValue() != null ? cd.getLastValue() : BigDecimal.ZERO;
+                    BigDecimal delta = volKzt.subtract(lastVol);
+                    // Only alert if volume increased by at least 500 million KZT since last notification
+                    if (delta.compareTo(BigDecimal.valueOf(500_000_000L)) < 0) {
                         return Mono.empty();
                     }
                     cd.setLastSentAt(LocalDateTime.now());
@@ -146,13 +156,14 @@ public class TelegramAlertDispatcherService {
                     return cooldownRepository.save(cd).then(Mono.just(true));
                 })
                 .switchIfEmpty(
+                        // Initialize baseline on first scan so cumulative historical volume doesn't trigger false alerts
                         cooldownRepository.save(AlertCooldownEntity.builder()
                                 .alertType("WHALE")
                                 .ticker(ticker)
                                 .lastSentAt(LocalDateTime.now())
                                 .lastValue(volKzt)
                                 .build()
-                        ).map(e -> true)
+                        ).then(Mono.empty())
                 )
                 .flatMap(shouldSend -> {
                     String message = buildWhaleMessage(ticker, name, volKzt, price);
@@ -337,7 +348,7 @@ public class TelegramAlertDispatcherService {
                 coupon != null ? coupon.toPlainString() + "% годовых" : "Плавающая / Уточняется",
                 finish,
                 cur,
-                bond.getBoardRu() != null ? bond.getBoardRu() : "Основная площадка"
+                (bond.getBoardRu() != null && !bond.getBoardRu().isBlank()) ? bond.getBoardRu() : "Основная площадка"
         );
     }
 
@@ -424,7 +435,8 @@ public class TelegramAlertDispatcherService {
     }
 
     private String formatDuration(Integer dtm) {
-        if (dtm == null || dtm <= 0) return "Срок истек";
+        if (dtm == null) return "По регламенту выпуска";
+        if (dtm <= 0) return "Срок истек";
         if (dtm < 30) return dtm + " дн.";
         int months = dtm / 30;
         if (months < 12) return months + " мес.";

@@ -36,6 +36,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessagecontent.InputTextMessageContent;
@@ -46,7 +47,9 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -239,6 +242,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private void handleCallbackQuery(CallbackQuery callback) {
+        try {
+            telegramClient.execute(AnswerCallbackQuery.builder().callbackQueryId(callback.getId()).build());
+        } catch (Exception e) {
+            log.debug("Failed to answer callback query {}: {}", callback.getId(), e.getMessage());
+        }
+
         Long chatId = callback.getMessage().getChatId();
         Integer messageId = callback.getMessage().getMessageId();
         String data = callback.getData();
@@ -798,6 +807,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private void handleQuickTickerLookup(Long chatId, String ticker) {
         analyticsService.getInstrumentDetailByCode(ticker)
                 .doOnSuccess(b -> {
+                    if (b != null && b.getInstrument() != null &&
+                            ("share".equalsIgnoreCase(b.getInstrument().getSecType()) || "stock".equalsIgnoreCase(b.getInstrument().getSecType()))) {
+                        handleStockCommand(chatId, "/stock " + ticker);
+                        return;
+                    }
+
                     if (b == null) {
                         // Check if it's a stock
                         analyticsService.getTopStocks(List.of(ticker))
@@ -896,21 +911,37 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     }
                     BigDecimal ytm = b.getEffectiveYield();
                     Integer dtm = b.getInstrument() != null ? b.getInstrument().getDtm() : null;
+                    if (dtm == null) {
+                        LocalDate finish = (b.getTicker() != null && b.getTicker().getFinishDate() != null)
+                                ? b.getTicker().getFinishDate()
+                                : (b.getInstrument() != null ? b.getInstrument().getRepaymentStartDate() : null);
+                        if (finish != null) {
+                            long days = ChronoUnit.DAYS.between(LocalDate.now(), finish);
+                            if (days > 0) dtm = (int) days;
+                        }
+                    }
+
+                    String couponStr = (couponRate != null && couponRate.compareTo(BigDecimal.ZERO) > 0)
+                            ? couponRate.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
+                            : "Уточняется (новый выпуск / плавающий)";
+                    String ytmStr = (ytm != null && ytm.compareTo(BigDecimal.ZERO) > 0)
+                            ? ytm.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
+                            : "Формируется рынком";
 
                     String msg = String.format(
                             "📑 <b>Паспорт облигации: %s</b> (<code>%s</code>)\n\n" +
                             "• <b>Эмитент:</b> %s\n" +
                             "• <b>Текущая цена:</b> <b>%.2f%%</b> (~%s %s / шт.)\n" +
-                            "• <b>Ставка купона:</b> %s%%\n" +
-                            "• <b>Доходность к погашению (YTM):</b> <b>%s%%</b>\n" +
+                            "• <b>Ставка купона:</b> %s\n" +
+                            "• <b>Доходность к погашению (YTM):</b> <b>%s</b>\n" +
                             "• <b>Срок до погашения:</b> %s\n" +
                             "• <b>Объем торгов:</b> %s ₸\n\n" +
                             "💡 <i>Нажмите кнопку ниже для быстрого расчета доходности на нужную сумму:</i>",
                             escapeHtml(name), ticker,
                             escapeHtml(issuer),
                             price.doubleValue(), formatMoney(buyPrice), cur,
-                            couponRate != null ? couponRate.setScale(2, RoundingMode.HALF_UP).toPlainString() : "—",
-                            ytm != null ? ytm.setScale(2, RoundingMode.HALF_UP).toPlainString() : "—",
+                            couponStr,
+                            ytmStr,
                             formatDuration(dtm),
                             formatMoney(b.getInstrument() != null ? b.getInstrument().getVolkzt() : BigDecimal.ZERO)
                     );
@@ -1059,6 +1090,27 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
         analyticsService.getInstrumentDetailByCode(rawTicker)
                 .doOnSuccess(b -> {
+                    if (b != null && b.getInstrument() != null &&
+                            ("share".equalsIgnoreCase(b.getInstrument().getSecType()) || "stock".equalsIgnoreCase(b.getInstrument().getSecType()))) {
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("📊 Карточка акции " + rawTicker).callbackData("STOCK_" + rawTicker).build(),
+                                        InlineKeyboardButton.builder().text("📈 Теханализ RSI/SMA").callbackData("TA_" + rawTicker).build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + rawTicker).build(),
+                                        InlineKeyboardButton.builder().text("⚖️ KASE vs AIX").callbackData("COMPARE_" + rawTicker).build()
+                                ))
+                                .build();
+                        sendMessage(chatId, String.format(
+                                "⚠️ <b>%s</b> — это <b>акция</b>, а не облигация.\n\n" +
+                                "Калькулятор доходности <code>/calc</code> рассчитывает купонные выплаты и дисконт к номиналу для долговых бумаг (облигаций).\n\n" +
+                                "Для анализа акции %s воспользуйтесь кнопками ниже:",
+                                rawTicker, rawTicker
+                        ), kb);
+                        return;
+                    }
+
                     if (b == null) {
                         analyticsService.getBondScreener(null, null, null, null, null, null, null, rawTicker, "volume", "desc", 4, 0)
                                 .defaultIfEmpty(List.of())
@@ -1120,8 +1172,18 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     double annualCouponIncome = totalNominal.doubleValue() * (couponRateVal / 100.0);
                     double quarterlyPayout = annualCouponIncome / 4.0;
 
-                    int dtm = (b.getInstrument() != null && b.getInstrument().getDtm() != null) ? b.getInstrument().getDtm() : 365;
-                    double years = Math.max(0.1, dtm / 365.25);
+                    Integer dtm = (b.getInstrument() != null && b.getInstrument().getDtm() != null) ? b.getInstrument().getDtm() : null;
+                    if (dtm == null) {
+                        LocalDate finish = (b.getTicker() != null && b.getTicker().getFinishDate() != null)
+                                ? b.getTicker().getFinishDate()
+                                : (b.getInstrument() != null ? b.getInstrument().getRepaymentStartDate() : null);
+                        if (finish != null) {
+                            long days = ChronoUnit.DAYS.between(LocalDate.now(), finish);
+                            if (days > 0) dtm = (int) days;
+                        }
+                    }
+                    int dtmVal = dtm != null ? dtm : 365;
+                    double years = Math.max(0.1, dtmVal / 365.25);
                     double totalCouponsAllTime = annualCouponIncome * years;
                     double grandTotalReturn = capitalGain.doubleValue() + totalCouponsAllTime;
                     double roiPercent = (grandTotalReturn / totalInvested.doubleValue()) * 100.0;
@@ -1130,37 +1192,60 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             ? b.getInstrument().getOrgShortNameRu()
                             : (b.getInstrument() != null ? b.getInstrument().getOrgNameRu() : rawTicker);
                     String cur = b.getResolvedCurrency() != null ? b.getResolvedCurrency() : "KZT";
+                    String durationStr = formatDuration(dtm);
+                    boolean isTermsPending = couponRateVal <= 0 && capitalGain.compareTo(BigDecimal.ZERO) <= 0;
 
-                    String res = String.format(
-                            "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
-                            "• <b>Сумма инвестиций:</b> %s %s\n" +
-                            "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
-                            "• <b>Реально затрачено:</b> %s %s\n\n" +
-                            "💰 <b>Выплаты купонов:</b>\n" +
-                            "• В квартал (каждые 3 мес): ~<b>%s %s</b>\n" +
-                            "• В год: ~<b>%s %s</b>\n" +
-                            "• Всего купонами за весь срок: ~<b>%s %s</b>\n\n" +
-                            "🏦 <b>Возврат номинала при погашении:</b>\n" +
-                            "• Эмитент вернет: <b>%s %s</b>\n" +
-                            "• Прибыль на росте цены (скидка): <b>+%s %s</b>\n\n" +
-                            "🎯 <b>ИТОГОВЫЙ ДОХОД:</b>\n" +
-                            "• Чистая прибыль: <b>+%s %s</b> (<b>+%.1f%%</b> к вложениям)\n" +
-                            "• Доходность годовых (YTM): <b>%.2f%%</b>\n" +
-                            "• Срок до возврата капитала: %s",
-                            escapeHtml(name), (b.getInstrument() != null && b.getInstrument().getCode() != null ? b.getInstrument().getCode() : rawTicker),
-                            formatMoney(BigDecimal.valueOf(amount)), cur,
-                            count, formatMoney(pricePerBond), cur,
-                            formatMoney(totalInvested), cur,
-                            formatMoney(BigDecimal.valueOf(quarterlyPayout)), cur,
-                            formatMoney(BigDecimal.valueOf(annualCouponIncome)), cur,
-                            formatMoney(BigDecimal.valueOf(totalCouponsAllTime)), cur,
-                            formatMoney(totalNominal), cur,
-                            formatMoney(capitalGain), cur,
-                            formatMoney(BigDecimal.valueOf(grandTotalReturn)), cur,
-                            roiPercent,
-                            b.getEffectiveYield() != null ? b.getEffectiveYield().doubleValue() : couponRateVal,
-                            formatDuration(dtm)
-                    );
+                    String res;
+                    if (isTermsPending) {
+                        res = String.format(
+                                "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
+                                "• <b>Сумма инвестиций:</b> %s %s\n" +
+                                "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
+                                "• <b>Реально затрачено:</b> %s %s\n\n" +
+                                "ℹ️ <b>Параметры доходности формируются:</b>\n" +
+                                "По данному выпуску ставка купона и доходность к погашению (YTM) еще не зафиксированы биржей KASE (новый выпуск или плавающая ставка).\n\n" +
+                                "• <b>Эмитент вернет при погашении:</b> <b>%s %s</b>\n" +
+                                "• <b>Срок обращения:</b> %s\n\n" +
+                                "💡 <i>Точный расчет купонных выплат станет доступен сразу после фиксации условий купона эмитентом.</i>",
+                                escapeHtml(name), (b.getInstrument() != null && b.getInstrument().getCode() != null ? b.getInstrument().getCode() : rawTicker),
+                                formatMoney(BigDecimal.valueOf(amount)), cur,
+                                count, formatMoney(pricePerBond), cur,
+                                formatMoney(totalInvested), cur,
+                                formatMoney(totalNominal), cur,
+                                durationStr
+                        );
+                    } else {
+                        res = String.format(
+                                "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
+                                "• <b>Сумма инвестиций:</b> %s %s\n" +
+                                "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
+                                "• <b>Реально затрачено:</b> %s %s\n\n" +
+                                "💰 <b>Выплаты купонов:</b>\n" +
+                                "• В квартал (каждые 3 мес): ~<b>%s %s</b>\n" +
+                                "• В год: ~<b>%s %s</b>\n" +
+                                "• Всего купонами за весь срок: ~<b>%s %s</b>\n\n" +
+                                "🏦 <b>Возврат номинала при погашении:</b>\n" +
+                                "• Эмитент вернет: <b>%s %s</b>\n" +
+                                "• Прибыль на росте цены (скидка): <b>+%s %s</b>\n\n" +
+                                "🎯 <b>ИТОГОВЫЙ ДОХОД:</b>\n" +
+                                "• Чистая прибыль: <b>+%s %s</b> (<b>+%.1f%%</b> к вложениям)\n" +
+                                "• Доходность годовых (YTM): <b>%.2f%%</b>\n" +
+                                "• Срок до возврата капитала: %s",
+                                escapeHtml(name), (b.getInstrument() != null && b.getInstrument().getCode() != null ? b.getInstrument().getCode() : rawTicker),
+                                formatMoney(BigDecimal.valueOf(amount)), cur,
+                                count, formatMoney(pricePerBond), cur,
+                                formatMoney(totalInvested), cur,
+                                formatMoney(BigDecimal.valueOf(quarterlyPayout)), cur,
+                                formatMoney(BigDecimal.valueOf(annualCouponIncome)), cur,
+                                formatMoney(BigDecimal.valueOf(totalCouponsAllTime)), cur,
+                                formatMoney(totalNominal), cur,
+                                formatMoney(capitalGain), cur,
+                                formatMoney(BigDecimal.valueOf(grandTotalReturn)), cur,
+                                roiPercent,
+                                b.getEffectiveYield() != null ? b.getEffectiveYield().doubleValue() : couponRateVal,
+                                durationStr
+                        );
+                    }
                     InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                             .keyboardRow(new InlineKeyboardRow(
                                     InlineKeyboardButton.builder().text("💰 100 000 ₸").callbackData("CALC_" + rawTicker + "_100000").build(),
@@ -1594,7 +1679,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private String formatDuration(Integer dtm) {
-        if (dtm == null || dtm <= 0) return "Срок истек";
+        if (dtm == null) return "По регламенту выпуска";
+        if (dtm <= 0) return "Срок истек";
         if (dtm < 30) return dtm + " дн.";
         int months = dtm / 30;
         if (months < 12) return months + " мес.";
