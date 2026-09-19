@@ -34,5 +34,7 @@ public interface BondAnalyticsService {
 
     Mono<List<StockItemDto>> getTopStocks(List<String> specificTickers);
 
+    Mono<List<StockItemDto>> searchStocks(String query, int limit);
+
     Mono<List<BondItemDto>> getUpcomingCouponBonds();
 }

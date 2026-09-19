@@ -2167,7 +2167,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         String q = rawQuery.toUpperCase();
         String queryId = inlineQuery.getId();
 
-        Mono<List<StockItemDto>> kaseStocksMono = analyticsService.getTopStocks(null)
+        Mono<List<StockItemDto>> kaseStocksMono = (rawQuery.isBlank()
+                ? analyticsService.getTopStocks(null)
+                : analyticsService.searchStocks(rawQuery, 15))
                 .defaultIfEmpty(List.of())
                 .onErrorReturn(List.of());
 
@@ -2184,12 +2186,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         Mono.zip(kaseStocksMono, aixSecuritiesMono, bondsMono)
                 .doOnSuccess(tuple -> {
                     List<StockItemDto> kaseStocks = tuple.getT1();
-                    List<AixInstrumentDto> aixSecurities = tuple.getT2();
+                    List<AixInstrumentDto> aixSecurities = new ArrayList<>(tuple.getT2());
                     List<BondItemDto> bonds = tuple.getT3();
 
                     List<InlineQueryResult> results = new ArrayList<>();
 
-                    // 1. KASE Stocks
+                    // 1. KASE Stocks (sorted: exact matches first, then prefix, then by volume)
                     for (StockItemDto s : kaseStocks) {
                         if (results.size() >= 20) break;
                         if (s.getCode() == null) continue;
@@ -2247,13 +2249,37 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 .build());
                     }
 
-                    // 2. AIX Securities
+                    // 2. AIX Securities: sort exact matches and equities/ETFs first, avoid debt flood
+                    aixSecurities.sort((a1, a2) -> {
+                        boolean a1Exact = q.equalsIgnoreCase(a1.getSecCode());
+                        boolean a2Exact = q.equalsIgnoreCase(a2.getSecCode());
+                        if (a1Exact != a2Exact) return a1Exact ? -1 : 1;
+
+                        boolean a1IsStock = "EQUITY".equalsIgnoreCase(a1.getAssetClass()) || "ETF".equalsIgnoreCase(a1.getAssetClass()) || "ETN".equalsIgnoreCase(a1.getAssetClass());
+                        boolean a2IsStock = "EQUITY".equalsIgnoreCase(a2.getAssetClass()) || "ETF".equalsIgnoreCase(a2.getAssetClass()) || "ETN".equalsIgnoreCase(a2.getAssetClass());
+                        if (a1IsStock != a2IsStock) return a1IsStock ? -1 : 1;
+
+                        return 0;
+                    });
+
+                    int aixDebtCount = 0;
                     for (AixInstrumentDto aix : aixSecurities) {
                         if (results.size() >= 35) break;
                         if (aix.getSecCode() == null) continue;
-                        String name = aix.getShortName() != null ? aix.getShortName()
-                                : (aix.getName() != null ? aix.getName() : aix.getIssuer());
+
+                        boolean isDebt = "DEBT".equalsIgnoreCase(aix.getAssetClass()) || "BOND".equalsIgnoreCase(aix.getAssetClass());
+                        if (isDebt && aixDebtCount >= 2 && !q.isBlank() && !q.equalsIgnoreCase(aix.getSecCode())) {
+                            continue; // Prevent debt papers from flooding equity search
+                        }
+
+                        String name = (aix.getName() != null && !aix.getName().isBlank() && !aix.getName().equalsIgnoreCase(aix.getSecCode()))
+                                ? aix.getName()
+                                : ((aix.getShortName() != null && !aix.getShortName().isBlank() && !aix.getShortName().equalsIgnoreCase(aix.getSecCode()))
+                                ? aix.getShortName()
+                                : (aix.getIssuer() != null ? aix.getIssuer() : "AIX"));
                         if (!matchesTickerQuery(aix.getSecCode(), name, q)) continue;
+
+                        if (isDebt) aixDebtCount++;
 
                         BigDecimal price = aix.getLastTrade() != null ? aix.getLastTrade()
                                 : (aix.getPreviousClose() != null ? aix.getPreviousClose() : aix.getReferencePrice());
@@ -2261,8 +2287,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         String sign = (chg != null && chg.compareTo(BigDecimal.ZERO) >= 0) ? "+" : "";
                         String chgStr = chg != null ? chg.setScale(2, RoundingMode.HALF_UP).toPlainString() : "0.00";
                         String cur = aix.getCurrency() != null ? aix.getCurrency() : "KZT";
+                        String assetTag = isDebt ? " (Облигация AIX)" : " (AIX)";
 
-                        String title = String.format("🏛️ %s — %s (AIX)", aix.getSecCode(), name != null ? name : "AIX");
+                        String title = String.format("🏛️ %s — %s%s", aix.getSecCode(), name, assetTag);
                         String desc = String.format("%s %s (%s%s%%) • Биржа AIX",
                                 price != null ? formatMoney(price) : "—", cur, sign, chgStr);
 
@@ -2272,7 +2299,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 "💵 Текущая цена: <b>%s %s</b> (%s%s%%)\n" +
                                 "📖 Доступен стакан заявок Level-2 (Order Book).\n\n" +
                                 "💡 <i>Выберите действие для этого инструмента:</i>",
-                                aix.getSecCode(), escapeHtml(name != null ? name : aix.getSecCode()), cur,
+                                aix.getSecCode(), escapeHtml(name), cur,
                                 price != null ? formatMoney(price) : "—", cur,
                                 sign, chgStr
                         );

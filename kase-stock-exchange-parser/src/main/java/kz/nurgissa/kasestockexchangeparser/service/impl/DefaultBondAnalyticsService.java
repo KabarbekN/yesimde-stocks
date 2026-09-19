@@ -667,6 +667,82 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
     }
 
     @Override
+    public Mono<List<StockItemDto>> searchStocks(String query, int limit) {
+        int maxLimit = (limit > 0 && limit <= 50) ? limit : 20;
+        if (query == null || query.isBlank()) {
+            return getTopStocks(null);
+        }
+
+        String cleanQ = query.trim();
+        List<String> aliasTickers = new ArrayList<>();
+        String upperQ = cleanQ.toUpperCase();
+        if (upperQ.contains("КАСПИ") || upperQ.contains("KASPI")) aliasTickers.add("KSPI");
+        if (upperQ.contains("ХАЛЫК") || upperQ.contains("НАРОДН") || upperQ.contains("HALYK")) {
+            aliasTickers.add("HSBK");
+            aliasTickers.add("HSBKP1");
+        }
+        if (upperQ.contains("КАЗАТОМ") || upperQ.contains("УРАН") || upperQ.contains("KAP") || upperQ.contains("KZAP")) aliasTickers.add("KZAP");
+        if (upperQ.contains("МУНАЙ") || upperQ.contains("КМГ") || upperQ.contains("KMG")) aliasTickers.add("KMGZ");
+        if (upperQ.contains("АСТАНА") || upperQ.contains("ЭЙР") || upperQ.contains("AIRA")) aliasTickers.add("AIRA");
+        if (upperQ.contains("ТЕЛЕКОМ") || upperQ.contains("КЗТК")) {
+            aliasTickers.add("KZTK");
+            aliasTickers.add("KZTKP");
+        }
+        if (upperQ.contains("ЦЕНТРКРЕДИТ") || upperQ.contains("БЦК") || upperQ.contains("CCBN")) aliasTickers.add("CCBN");
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT s.id, s.code, COALESCE(s.org_short_name_ru, s.org_name_ru) AS name,
+                   s.price, s.close_price, s.trand AS change, s.trand_percent AS change_percent,
+                   s.volkzt, s.dealcnt,
+                   COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') AS currency
+            FROM security_instrument s
+            LEFT JOIN ticker t ON s.id = t.security_instrument_id
+            WHERE s.sec_type IN ('share', 'stock')
+              AND (
+                  UPPER(s.code) LIKE :likePattern
+                  OR UPPER(s.org_name_ru) LIKE :likePattern
+                  OR UPPER(COALESCE(s.org_short_name_ru, '')) LIKE :likePattern
+        """);
+
+        if (!aliasTickers.isEmpty()) {
+            String inClause = aliasTickers.stream().map(t -> "'" + t + "'").collect(Collectors.joining(","));
+            sql.append(" OR UPPER(s.code) IN (").append(inClause).append(") ");
+        }
+
+        sql.append("""
+              )
+            ORDER BY
+                CASE
+                    WHEN UPPER(s.code) = :exactUpper THEN 0
+                    WHEN UPPER(s.code) LIKE :prefixUpper THEN 1
+                    ELSE 2
+                END,
+                s.volkzt DESC NULLS LAST
+            LIMIT :lim
+        """);
+
+        return databaseClient.sql(sql.toString())
+                .bind("likePattern", "%" + cleanQ.toUpperCase() + "%")
+                .bind("exactUpper", cleanQ.toUpperCase())
+                .bind("prefixUpper", cleanQ.toUpperCase() + "%")
+                .bind("lim", maxLimit)
+                .map((row, meta) -> StockItemDto.builder()
+                        .code(row.get("code", String.class))
+                        .name(row.get("name", String.class))
+                        .price(row.get("price", BigDecimal.class))
+                        .closePrice(row.get("close_price", BigDecimal.class))
+                        .change(row.get("change", BigDecimal.class))
+                        .changePercent(row.get("change_percent", BigDecimal.class))
+                        .volumeKzt(row.get("volkzt", BigDecimal.class))
+                        .dealCount(row.get("dealcnt", Integer.class))
+                        .currency(row.get("currency", String.class))
+                        .build()
+                )
+                .all()
+                .collectList();
+    }
+
+    @Override
     public Mono<List<BondItemDto>> getUpcomingCouponBonds() {
         return getBondScreener(null, null, null, 1, 30, null, null, null, "dtm", "asc", 10, 0);
     }
