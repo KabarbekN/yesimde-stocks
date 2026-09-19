@@ -24,6 +24,9 @@ databaseChangeLog:
   - include:
       file: 08-create-price-alert-target.sql
       relativeToChangelogFile: true
+  - include:
+      file: 09-add-performance-indexes.sql
+      relativeToChangelogFile: true
 
 
 

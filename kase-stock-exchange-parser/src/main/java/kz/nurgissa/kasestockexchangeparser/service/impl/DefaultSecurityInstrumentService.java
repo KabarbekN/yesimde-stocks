@@ -10,11 +10,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +38,10 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
     private final InstrumentMarketMakerRepository immRepository;
     private final SecurityPriceHistoryRepository priceHistoryRepository;
     private final kz.nurgissa.kasestockexchangeparser.telegram.TelegramAlertDispatcherService alertDispatcherService;
+
+    private final ConcurrentHashMap<Long, PriceSnapshot> lastRecordedSnapshots = new ConcurrentHashMap<>();
+
+    private record PriceSnapshot(BigDecimal price, BigDecimal bid, BigDecimal offer, BigDecimal volKzt, LocalDateTime timestamp) {}
 
     @Override
     public Mono<Void> saveAll(Flux<SecurityInstrumentResponse> flux) {
@@ -55,7 +65,7 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
                                     PARALLELISM
                             );
 
-                    Mono<Void> saveHistory = history == null
+                    Mono<Void> saveHistory = (history == null || !shouldRecordPriceHistory(history))
                             ? Mono.empty()
                             : priceHistoryRepository.save(history).then();
 
@@ -65,6 +75,45 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
                             .then(saveHistory);
                 }, PARALLELISM)
                 .then();
+    }
+
+    private boolean shouldRecordPriceHistory(SecurityPriceHistoryEntity history) {
+        if (history == null || history.getSecurityInstrumentId() == null) {
+            return false;
+        }
+        Long id = history.getSecurityInstrumentId();
+        PriceSnapshot last = lastRecordedSnapshots.get(id);
+        if (last == null) {
+            lastRecordedSnapshots.put(id, new PriceSnapshot(history.getPrice(), history.getBestBid(), history.getBestOffer(), history.getVolkzt(), LocalDateTime.now()));
+            return true;
+        }
+
+        boolean priceChanged = !Objects.equals(last.price(), history.getPrice());
+        boolean bidChanged = !Objects.equals(last.bid(), history.getBestBid());
+        boolean offerChanged = !Objects.equals(last.offer(), history.getBestOffer());
+        boolean volumeChanged = !Objects.equals(last.volKzt(), history.getVolkzt());
+
+        if (priceChanged || bidChanged || offerChanged || volumeChanged) {
+            lastRecordedSnapshots.put(id, new PriceSnapshot(history.getPrice(), history.getBestBid(), history.getBestOffer(), history.getVolkzt(), LocalDateTime.now()));
+            return true;
+        }
+
+        // Heartbeat: save at least once every 60 minutes even if price hasn't moved
+        if (ChronoUnit.MINUTES.between(last.timestamp(), LocalDateTime.now()) >= 60) {
+            lastRecordedSnapshots.put(id, new PriceSnapshot(history.getPrice(), history.getBestBid(), history.getBestOffer(), history.getVolkzt(), LocalDateTime.now()));
+            return true;
+        }
+
+        return false;
+    }
+
+    @Scheduled(cron = "0 0 3 * * ?", zone = "Asia/Almaty")
+    public void purgeOldPriceHistory() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(90);
+        priceHistoryRepository.deleteOlderThan(cutoff)
+                .doOnSuccess(deleted -> log.info("Purged {} historical price records older than 90 days (cutoff: {})", deleted, cutoff))
+                .doOnError(e -> log.error("Failed to purge old price history: {}", e.getMessage()))
+                .subscribe();
     }
 
     @Override

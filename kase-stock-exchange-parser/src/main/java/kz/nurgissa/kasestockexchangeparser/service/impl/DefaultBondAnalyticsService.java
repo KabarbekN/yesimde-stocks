@@ -746,4 +746,130 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
     public Mono<List<BondItemDto>> getUpcomingCouponBonds() {
         return getBondScreener(null, null, null, 1, 30, null, null, null, "dtm", "asc", 10, 0);
     }
+
+    @Override
+    public Mono<BondCalculationDto> calculateBondReturn(String ticker, BigDecimal amount) {
+        if (ticker == null || ticker.isBlank() || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Mono.empty();
+        }
+
+        return getInstrumentDetailByCode(ticker.trim().toUpperCase())
+                .flatMap(b -> {
+                    if (b == null || b.getInstrument() == null) {
+                        return Mono.empty();
+                    }
+
+                    // Ensure this is a bond/gsec
+                    String secType = b.getInstrument().getSecType();
+                    if ("share".equalsIgnoreCase(secType) || "stock".equalsIgnoreCase(secType)) {
+                        return Mono.error(new IllegalArgumentException("Тикер " + ticker + " является акцией, а не облигацией"));
+                    }
+
+                    BigDecimal faceVal = (b.getFaceValue() != null && b.getFaceValue().compareTo(BigDecimal.ZERO) > 0)
+                            ? b.getFaceValue()
+                            : BigDecimal.valueOf(1000);
+
+                    BigDecimal pricePct = (b.getInstrument().getPrice() != null && b.getInstrument().getPrice().compareTo(BigDecimal.ZERO) > 0)
+                            ? b.getInstrument().getPrice()
+                            : BigDecimal.valueOf(100);
+
+                    BigDecimal pricePerBond = faceVal.multiply(pricePct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    if (pricePerBond.compareTo(BigDecimal.ZERO) <= 0) {
+                        return Mono.empty();
+                    }
+
+                    long count = (long) (amount.doubleValue() / pricePerBond.doubleValue());
+                    BigDecimal totalInvested = pricePerBond.multiply(BigDecimal.valueOf(count));
+                    BigDecimal totalNominal = faceVal.multiply(BigDecimal.valueOf(count));
+                    BigDecimal capitalGain = totalNominal.subtract(totalInvested);
+
+                    BigDecimal couponRate = null;
+                    if (b.getTicker() != null) {
+                        couponRate = b.getTicker().getCupon() != null ? b.getTicker().getCupon() : b.getTicker().getCupon2();
+                    }
+                    double couponRateVal = couponRate != null ? couponRate.doubleValue() : 0.0;
+
+                    // Dynamic coupon frequency detection
+                    int freq = 4; // default quarterly
+                    if (b.getTicker() != null) {
+                        String scheme = b.getTicker().getSettlementSchemes();
+                        String typeSec = b.getTicker().getTypesecRu();
+                        String combined = ((scheme != null ? scheme : "") + " " + (typeSec != null ? typeSec : "")).toLowerCase();
+                        if (combined.contains("месяц") || combined.contains("12 раз")) {
+                            freq = 12;
+                        } else if (combined.contains("полугод") || combined.contains("2 раз") || "gsec".equalsIgnoreCase(b.getInstrument().getSecType())) {
+                            freq = 2;
+                        } else if (combined.contains("годов") || combined.contains("1 раз")) {
+                            freq = 1;
+                        }
+                    }
+
+                    BigDecimal annualCouponIncome = totalNominal.multiply(BigDecimal.valueOf(couponRateVal / 100.0)).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal couponPayoutPerPeriod = freq > 0
+                            ? annualCouponIncome.divide(BigDecimal.valueOf(freq), 2, RoundingMode.HALF_UP)
+                            : BigDecimal.ZERO;
+
+                    Integer dtm = b.getInstrument().getDtm();
+                    if (dtm == null) {
+                        LocalDate finish = (b.getTicker() != null && b.getTicker().getFinishDate() != null)
+                                ? b.getTicker().getFinishDate()
+                                : b.getInstrument().getRepaymentStartDate();
+                        if (finish != null) {
+                            long days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), finish);
+                            if (days > 0) dtm = (int) days;
+                        }
+                    }
+
+                    int dtmVal = dtm != null ? dtm : 365;
+                    double durationYears = Math.max(0.1, dtmVal / 365.25);
+                    BigDecimal totalCouponsAllTime = annualCouponIncome.multiply(BigDecimal.valueOf(durationYears)).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal grandTotalReturn = capitalGain.add(totalCouponsAllTime);
+                    BigDecimal roiPercent = totalInvested.compareTo(BigDecimal.ZERO) > 0
+                            ? grandTotalReturn.multiply(BigDecimal.valueOf(100)).divide(totalInvested, 2, RoundingMode.HALF_UP)
+                            : BigDecimal.ZERO;
+
+                    String name = b.getInstrument().getOrgShortNameRu() != null
+                            ? b.getInstrument().getOrgShortNameRu()
+                            : (b.getInstrument().getOrgNameRu() != null ? b.getInstrument().getOrgNameRu() : ticker);
+                    String currency = b.getResolvedCurrency() != null ? b.getResolvedCurrency() : "KZT";
+                    boolean isTermsPending = couponRateVal <= 0 && capitalGain.compareTo(BigDecimal.ZERO) <= 0;
+
+                    return Mono.just(BondCalculationDto.builder()
+                            .ticker(b.getInstrument().getCode() != null ? b.getInstrument().getCode() : ticker)
+                            .name(name)
+                            .amountInvested(amount)
+                            .faceValue(faceVal)
+                            .pricePercent(pricePct)
+                            .pricePerBond(pricePerBond)
+                            .bondCount(count)
+                            .totalInvested(totalInvested)
+                            .totalNominal(totalNominal)
+                            .capitalGain(capitalGain)
+                            .couponRate(BigDecimal.valueOf(couponRateVal))
+                            .couponFrequencyPerYear(freq)
+                            .couponPayoutPerPeriod(couponPayoutPerPeriod)
+                            .annualCouponIncome(annualCouponIncome)
+                            .dtm(dtm)
+                            .durationYears(durationYears)
+                            .totalCouponsAllTime(totalCouponsAllTime)
+                            .grandTotalReturn(grandTotalReturn)
+                            .roiPercent(roiPercent)
+                            .currency(currency)
+                            .termsPending(isTermsPending)
+                            .durationFormatted(formatDuration(dtm))
+                            .build());
+                });
+    }
+
+    private String formatDuration(Integer dtm) {
+        if (dtm == null) return "По регламенту выпуска";
+        if (dtm <= 0) return "Срок истек";
+        if (dtm < 30) return dtm + " дн.";
+        int months = dtm / 30;
+        if (months < 12) return months + " мес.";
+        int years = dtm / 365;
+        int remMonths = (dtm % 365) / 30;
+        if (remMonths == 0) return years + " г.";
+        return years + " г. " + remMonths + " мес.";
+    }
 }

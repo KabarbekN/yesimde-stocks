@@ -3,6 +3,7 @@ package kz.nurgissa.kasestockexchangeparser.service;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.*;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface BondAnalyticsService {
@@ -37,4 +38,6 @@ public interface BondAnalyticsService {
     Mono<List<StockItemDto>> searchStocks(String query, int limit);
 
     Mono<List<BondItemDto>> getUpcomingCouponBonds();
+
+    Mono<BondCalculationDto> calculateBondReturn(String ticker, BigDecimal amount);
 }

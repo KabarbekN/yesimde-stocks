@@ -95,7 +95,7 @@ public class TelegramAlertDispatcherService {
                     String message = buildDiscountMessage(bond);
                     InlineKeyboardMarkup keyboard = buildBondInlineKeyboard(ticker);
                     return subscriberRepository.findAllBySubDiscountsTrue()
-                            .doOnNext(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                            .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                             .then();
                 });
     }
@@ -122,7 +122,7 @@ public class TelegramAlertDispatcherService {
                             String message = buildNewBondMessage(bond, ticker);
                             InlineKeyboardMarkup keyboard = buildBondInlineKeyboard(code);
                             return subscriberRepository.findAllBySubNewBondsTrue()
-                                    .doOnNext(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                                    .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                                     .then(Mono.empty());
                         })
                 )
@@ -169,7 +169,7 @@ public class TelegramAlertDispatcherService {
                     String message = buildWhaleMessage(ticker, name, volKzt, price);
                     InlineKeyboardMarkup keyboard = buildBondInlineKeyboard(ticker);
                     return subscriberRepository.findAllBySubWhalesTrue()
-                            .doOnNext(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                            .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                             .then();
                 });
     }
@@ -211,18 +211,19 @@ public class TelegramAlertDispatcherService {
                     String message = buildStockMoveMessage(stock);
                     InlineKeyboardMarkup keyboard = buildStockInlineKeyboard(code);
                     return subscriberRepository.findAllBySubStocksTrue()
-                            .doOnNext(sub -> {
+                            .flatMap(sub -> {
                                 BigDecimal userThreshold = (sub.getPriceChangeThreshold() != null && sub.getPriceChangeThreshold().compareTo(BigDecimal.ZERO) > 0)
                                         ? sub.getPriceChangeThreshold()
                                         : BigDecimal.valueOf(3.0);
                                 if (change.compareTo(userThreshold) < 0) {
-                                    return;
+                                    return Mono.empty();
                                 }
                                 // If subscriber has specific watchlist, check if subscribed
                                 if (sub.getWatchlist() == null || sub.getWatchlist().isBlank()
                                         || sub.getWatchlist().toUpperCase().contains(code.toUpperCase())) {
-                                    sendHtmlMessage(sub.getChatId(), message, keyboard);
+                                    return sendHtmlMessage(sub.getChatId(), message, keyboard);
                                 }
+                                return Mono.empty();
                             })
                             .then();
                 });
@@ -249,12 +250,11 @@ public class TelegramAlertDispatcherService {
                         alert.setIsTriggered(true);
                         alert.setTriggeredAt(LocalDateTime.now());
                         return priceAlertTargetRepository.save(alert)
-                                .doOnSuccess(saved -> {
+                                .flatMap(saved -> {
                                     String msg = buildPriceAlertTriggeredMessage(saved, currentPrice);
                                     InlineKeyboardMarkup keyboard = buildTargetTriggeredKeyboard(saved.getTicker());
-                                    sendHtmlMessage(saved.getChatId(), msg, keyboard);
-                                })
-                                .then();
+                                    return sendHtmlMessage(saved.getChatId(), msg, keyboard);
+                                });
                     }
                     return Mono.empty();
                 })
@@ -272,24 +272,35 @@ public class TelegramAlertDispatcherService {
 
         String message = buildWeeklyCouponMessage(upcomingBonds);
         return subscriberRepository.findAllBySubCouponsTrue()
-                .doOnNext(sub -> sendHtmlMessage(sub.getChatId(), message, null))
+                .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, null))
                 .then();
     }
 
-    private void sendHtmlMessage(Long chatId, String text, InlineKeyboardMarkup keyboard) {
-        if (chatId == null || text == null || telegramClient == null) return;
-        try {
-            SendMessage sm = SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(text)
-                    .parseMode("HTML")
-                    .disableWebPagePreview(true)
-                    .replyMarkup(keyboard)
-                    .build();
-            telegramClient.execute(sm);
-        } catch (Exception ex) {
-            log.error("Failed to send Telegram message to chatId {}: {}", chatId, ex.getMessage());
-        }
+    private Mono<Void> sendHtmlMessage(Long chatId, String text, InlineKeyboardMarkup keyboard) {
+        if (chatId == null || text == null || telegramClient == null) return Mono.empty();
+        return Mono.fromRunnable(() -> {
+            try {
+                SendMessage sm = SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text(text)
+                        .parseMode("HTML")
+                        .disableWebPagePreview(true)
+                        .replyMarkup(keyboard)
+                        .build();
+                telegramClient.execute(sm);
+            } catch (Exception ex) {
+                String errorMsg = ex.getMessage() != null ? ex.getMessage() : "";
+                if (errorMsg.contains("403") || errorMsg.toLowerCase().contains("blocked")
+                        || errorMsg.toLowerCase().contains("chat not found") || errorMsg.toLowerCase().contains("deactivated")) {
+                    log.warn("Subscriber {} blocked the bot or chat is invalid. Deactivating alerts. Error: {}", chatId, errorMsg);
+                    subscriberRepository.deactivateAllSubscriptions(chatId, LocalDateTime.now()).subscribe();
+                } else {
+                    log.error("Failed to send Telegram message to chatId {}: {}", chatId, errorMsg);
+                }
+            }
+        })
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+        .then();
     }
 
     private String buildDiscountMessage(BondItemDto bond) {

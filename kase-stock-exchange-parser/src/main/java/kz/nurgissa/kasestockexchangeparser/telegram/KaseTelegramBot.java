@@ -1,6 +1,7 @@
 package kz.nurgissa.kasestockexchangeparser.telegram;
 
 import kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.BondCalculationDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.InstrumentDetailDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
@@ -131,8 +132,12 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     @Override
     public void consume(Update update) {
         try {
-            if (update.hasMessage() && update.getMessage().hasText()) {
-                handleTextMessage(update.getMessage());
+            if (update.hasMessage()) {
+                if (update.getMessage().hasText()) {
+                    handleTextMessage(update.getMessage());
+                } else {
+                    handleNonTextMessage(update.getMessage());
+                }
             } else if (update.hasCallbackQuery()) {
                 handleCallbackQuery(update.getCallbackQuery());
             } else if (update.hasInlineQuery()) {
@@ -141,6 +146,29 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         } catch (Exception e) {
             log.error("Error processing Telegram update: {}", e.getMessage(), e);
         }
+    }
+
+    private void handleNonTextMessage(Message message) {
+        if (message == null || message.getChatId() == null) return;
+        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("⚡ Пульс рынка").callbackData("PULSE").build(),
+                        InlineKeyboardButton.builder().text("📈 Акции KASE").callbackData("MENU_STOCKS").build()
+                ))
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("📉 Скидки (<95%)").callbackData("MENU_DISCOUNTS").build(),
+                        InlineKeyboardButton.builder().text("⚖️ Арбитраж").callbackData("ARBITRAGE").build()
+                ))
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("ℹ️ Полная справка").callbackData("MENU_HELP").build()
+                ))
+                .build();
+
+        sendMessage(message.getChatId(),
+                "ℹ️ <b>Я работаю только с текстом и биржевыми тикерами.</b>\n\n" +
+                "Отправьте тикер ценной бумаги (например, <code>KSPI</code>, <code>HSBK</code>, <code>KZAP</code>) или выберите действие ниже:",
+                kb
+        );
     }
 
     private void handleTextMessage(Message message) {
@@ -353,12 +381,18 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             } catch (Exception e) {
                 log.error("Failed to parse alert ID: {}", e.getMessage());
             }
-        } else if (data.equals("PULSE")) {
+        } else if (data.equals("PULSE") || data.equals("MENU_PULSE")) {
             sendMarketPulse(chatId);
         } else if (data.equals("MY_ALERTS")) {
             sendMyAlerts(chatId);
-        } else if (data.equals("ARBITRAGE")) {
+        } else if (data.equals("ARBITRAGE") || data.equals("MENU_ARBITRAGE")) {
             handleArbitrageCommand(chatId, "/arbitrage");
+        } else if (data.equals("MENU_STOCKS")) {
+            sendStocks(chatId);
+        } else if (data.equals("MENU_DISCOUNTS")) {
+            sendDiscounts(chatId);
+        } else if (data.equals("MENU_HELP")) {
+            sendHelp(chatId);
         } else if (data.startsWith("DEPTH_")) {
             String ticker = data.substring("DEPTH_".length());
             handleMarketDepthCommand(chatId, "/depth " + ticker);
@@ -1093,30 +1127,93 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             return;
         }
 
-        analyticsService.getInstrumentDetailByCode(rawTicker)
-                .doOnSuccess(b -> {
-                    if (b != null && b.getInstrument() != null &&
-                            ("share".equalsIgnoreCase(b.getInstrument().getSecType()) || "stock".equalsIgnoreCase(b.getInstrument().getSecType()))) {
-                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
-                                .keyboardRow(new InlineKeyboardRow(
-                                        InlineKeyboardButton.builder().text("📊 Карточка акции " + rawTicker).callbackData("STOCK_" + rawTicker).build(),
-                                        InlineKeyboardButton.builder().text("📈 Теханализ RSI/SMA").callbackData("TA_" + rawTicker).build()
-                                ))
-                                .keyboardRow(new InlineKeyboardRow(
-                                        InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + rawTicker).build(),
-                                        InlineKeyboardButton.builder().text("⚖️ KASE vs AIX").callbackData("COMPARE_" + rawTicker).build()
-                                ))
-                                .build();
-                        sendMessage(chatId, String.format(
-                                "⚠️ <b>%s</b> — это <b>акция</b>, а не облигация.\n\n" +
-                                "Калькулятор доходности <code>/calc</code> рассчитывает купонные выплаты и дисконт к номиналу для долговых бумаг (облигаций).\n\n" +
-                                "Для анализа акции %s воспользуйтесь кнопками ниже:",
-                                rawTicker, rawTicker
-                        ), kb);
+        analyticsService.calculateBondReturn(rawTicker, BigDecimal.valueOf(amount))
+                .doOnSuccess(dto -> {
+                    if (dto == null) {
                         return;
                     }
 
-                    if (b == null) {
+                    if (dto.getBondCount() <= 0) {
+                        sendMessage(chatId, String.format("Суммы %.0f ₸ недостаточно для покупки хотя бы 1 облигации (стоимость 1 шт: %s ₸).",
+                                amount, formatMoney(dto.getPricePerBond())), null);
+                        return;
+                    }
+
+                    String res;
+                    if (dto.isTermsPending()) {
+                        res = String.format(
+                                "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
+                                "• <b>Сумма инвестиций:</b> %s %s\n" +
+                                "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
+                                "• <b>Реально затрачено:</b> %s %s\n\n" +
+                                "ℹ️ <b>Параметры доходности формируются:</b>\n" +
+                                "По данному выпуску ставка купона и доходность к погашению (YTM) еще не зафиксированы биржей KASE (новый выпуск или плавающая ставка).\n\n" +
+                                "• <b>Эмитент вернет при погашении:</b> <b>%s %s</b>\n" +
+                                "• <b>Срок обращения:</b> %s\n\n" +
+                                "💡 <i>Точный расчет купонных выплат станет доступен сразу после фиксации условий купона эмитентом.</i>",
+                                escapeHtml(dto.getName()), dto.getTicker(),
+                                formatMoney(dto.getAmountInvested()), dto.getCurrency(),
+                                dto.getBondCount(), formatMoney(dto.getPricePerBond()), dto.getCurrency(),
+                                formatMoney(dto.getTotalInvested()), dto.getCurrency(),
+                                formatMoney(dto.getTotalNominal()), dto.getCurrency(),
+                                dto.getDurationFormatted()
+                        );
+                    } else {
+                        String periodLabel = switch (dto.getCouponFrequencyPerYear() != null ? dto.getCouponFrequencyPerYear() : 4) {
+                            case 12 -> "В месяц";
+                            case 2 -> "В полугодие (каждые 6 мес)";
+                            case 1 -> "В год (1 раз)";
+                            default -> "В квартал (каждые 3 мес)";
+                        };
+
+                        res = String.format(
+                                "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
+                                "• <b>Сумма инвестиций:</b> %s %s\n" +
+                                "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
+                                "• <b>Реально затрачено:</b> %s %s\n\n" +
+                                "💰 <b>Выплаты купонов:</b>\n" +
+                                "• %s: ~<b>%s %s</b>\n" +
+                                "• В год: ~<b>%s %s</b>\n" +
+                                "• Всего купонами за весь срок: ~<b>%s %s</b>\n\n" +
+                                "🏦 <b>Возврат номинала при погашении:</b>\n" +
+                                "• Эмитент вернет: <b>%s %s</b>\n" +
+                                "• Прибыль на росте цены (скидка): <b>+%s %s</b>\n\n" +
+                                "🎯 <b>ИТОГОВЫЙ ДОХОД:</b>\n" +
+                                "• Чистая прибыль: <b>+%s %s</b> (<b>+%.1f%%</b> к вложениям)\n" +
+                                "• Купонная ставка: <b>%.2f%%</b> годовых\n" +
+                                "• Срок до возврата капитала: %s",
+                                escapeHtml(dto.getName()), dto.getTicker(),
+                                formatMoney(dto.getAmountInvested()), dto.getCurrency(),
+                                dto.getBondCount(), formatMoney(dto.getPricePerBond()), dto.getCurrency(),
+                                formatMoney(dto.getTotalInvested()), dto.getCurrency(),
+                                periodLabel, formatMoney(dto.getCouponPayoutPerPeriod()), dto.getCurrency(),
+                                formatMoney(dto.getAnnualCouponIncome()), dto.getCurrency(),
+                                formatMoney(dto.getTotalCouponsAllTime()), dto.getCurrency(),
+                                formatMoney(dto.getTotalNominal()), dto.getCurrency(),
+                                formatMoney(dto.getCapitalGain()), dto.getCurrency(),
+                                formatMoney(dto.getGrandTotalReturn()), dto.getCurrency(),
+                                dto.getRoiPercent() != null ? dto.getRoiPercent().doubleValue() : 0.0,
+                                dto.getCouponRate() != null ? dto.getCouponRate().doubleValue() : 0.0,
+                                dto.getDurationFormatted()
+                        );
+                    }
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("💰 100 000 ₸").callbackData("CALC_" + rawTicker + "_100000").build(),
+                                    InlineKeyboardButton.builder().text("💰 500 000 ₸").callbackData("CALC_" + rawTicker + "_500000").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("💰 1 000 000 ₸").callbackData("CALC_" + rawTicker + "_1000000").build(),
+                                    InlineKeyboardButton.builder().text("💰 5 000 000 ₸").callbackData("CALC_" + rawTicker + "_5000000").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📄 Паспорт облигации").callbackData("BOND_" + rawTicker).build(),
+                                    InlineKeyboardButton.builder().text("🔍 Другая бумага").switchInlineQueryCurrentChat("").build()
+                            ))
+                            .build();
+                    sendMessage(chatId, res, kb);
+                })
+                .switchIfEmpty(
                         analyticsService.getBondScreener(null, null, null, null, null, null, null, rawTicker, "volume", "desc", 4, 0)
                                 .defaultIfEmpty(List.of())
                                 .onErrorReturn(List.of())
@@ -1144,128 +1241,31 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                         sendMessage(chatId, "Облигация <code>" + escapeHtml(rawTicker) + "</code> не найдена.\n\nПроверьте тикер или выберите активную бумагу через <code>/discounts</code> или <code>/top</code>.", null);
                                     }
                                 })
-                                .subscribe();
-                        return;
-                    }
-
-                    BigDecimal faceVal = b.getFaceValue() != null && b.getFaceValue().compareTo(BigDecimal.ZERO) > 0 ? b.getFaceValue() : BigDecimal.valueOf(1000);
-                    BigDecimal pricePct = (b.getInstrument() != null && b.getInstrument().getPrice() != null && b.getInstrument().getPrice().compareTo(BigDecimal.ZERO) > 0)
-                            ? b.getInstrument().getPrice() : BigDecimal.valueOf(100);
-                    BigDecimal pricePerBond = faceVal.multiply(pricePct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-
-                    if (pricePerBond.compareTo(BigDecimal.ZERO) <= 0) {
-                        sendMessage(chatId, "Невозможно рассчитать: нет рыночной цены по бумаге.", null);
-                        return;
-                    }
-
-                    long count = (long) (amount / pricePerBond.doubleValue());
-                    if (count <= 0) {
-                        sendMessage(chatId, String.format("Суммы %.0f ₸ недостаточно для покупки хотя бы 1 облигации (стоимость 1 шт: %s ₸).",
-                                amount, formatMoney(pricePerBond)), null);
-                        return;
-                    }
-
-                    BigDecimal totalInvested = pricePerBond.multiply(BigDecimal.valueOf(count));
-                    BigDecimal totalNominal = faceVal.multiply(BigDecimal.valueOf(count));
-                    BigDecimal capitalGain = totalNominal.subtract(totalInvested);
-
-                    BigDecimal couponRate = null;
-                    if (b.getTicker() != null) {
-                        couponRate = b.getTicker().getCupon() != null ? b.getTicker().getCupon() : b.getTicker().getCupon2();
-                    }
-                    double couponRateVal = couponRate != null ? couponRate.doubleValue() : 0.0;
-                    double annualCouponIncome = totalNominal.doubleValue() * (couponRateVal / 100.0);
-                    double quarterlyPayout = annualCouponIncome / 4.0;
-
-                    Integer dtm = (b.getInstrument() != null && b.getInstrument().getDtm() != null) ? b.getInstrument().getDtm() : null;
-                    if (dtm == null) {
-                        LocalDate finish = (b.getTicker() != null && b.getTicker().getFinishDate() != null)
-                                ? b.getTicker().getFinishDate()
-                                : (b.getInstrument() != null ? b.getInstrument().getRepaymentStartDate() : null);
-                        if (finish != null) {
-                            long days = ChronoUnit.DAYS.between(LocalDate.now(), finish);
-                            if (days > 0) dtm = (int) days;
-                        }
-                    }
-                    int dtmVal = dtm != null ? dtm : 365;
-                    double years = Math.max(0.1, dtmVal / 365.25);
-                    double totalCouponsAllTime = annualCouponIncome * years;
-                    double grandTotalReturn = capitalGain.doubleValue() + totalCouponsAllTime;
-                    double roiPercent = (grandTotalReturn / totalInvested.doubleValue()) * 100.0;
-
-                    String name = (b.getInstrument() != null && b.getInstrument().getOrgShortNameRu() != null)
-                            ? b.getInstrument().getOrgShortNameRu()
-                            : (b.getInstrument() != null ? b.getInstrument().getOrgNameRu() : rawTicker);
-                    String cur = b.getResolvedCurrency() != null ? b.getResolvedCurrency() : "KZT";
-                    String durationStr = formatDuration(dtm);
-                    boolean isTermsPending = couponRateVal <= 0 && capitalGain.compareTo(BigDecimal.ZERO) <= 0;
-
-                    String res;
-                    if (isTermsPending) {
-                        res = String.format(
-                                "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
-                                "• <b>Сумма инвестиций:</b> %s %s\n" +
-                                "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
-                                "• <b>Реально затрачено:</b> %s %s\n\n" +
-                                "ℹ️ <b>Параметры доходности формируются:</b>\n" +
-                                "По данному выпуску ставка купона и доходность к погашению (YTM) еще не зафиксированы биржей KASE (новый выпуск или плавающая ставка).\n\n" +
-                                "• <b>Эмитент вернет при погашении:</b> <b>%s %s</b>\n" +
-                                "• <b>Срок обращения:</b> %s\n\n" +
-                                "💡 <i>Точный расчет купонных выплат станет доступен сразу после фиксации условий купона эмитентом.</i>",
-                                escapeHtml(name), (b.getInstrument() != null && b.getInstrument().getCode() != null ? b.getInstrument().getCode() : rawTicker),
-                                formatMoney(BigDecimal.valueOf(amount)), cur,
-                                count, formatMoney(pricePerBond), cur,
-                                formatMoney(totalInvested), cur,
-                                formatMoney(totalNominal), cur,
-                                durationStr
-                        );
-                    } else {
-                        res = String.format(
-                                "🧮 <b>Расчет инвестиций в %s (<code>%s</code>):</b>\n\n" +
-                                "• <b>Сумма инвестиций:</b> %s %s\n" +
-                                "• <b>Будет куплено:</b> <b>%d шт.</b> (по цене ~%s %s за шт.)\n" +
-                                "• <b>Реально затрачено:</b> %s %s\n\n" +
-                                "💰 <b>Выплаты купонов:</b>\n" +
-                                "• В квартал (каждые 3 мес): ~<b>%s %s</b>\n" +
-                                "• В год: ~<b>%s %s</b>\n" +
-                                "• Всего купонами за весь срок: ~<b>%s %s</b>\n\n" +
-                                "🏦 <b>Возврат номинала при погашении:</b>\n" +
-                                "• Эмитент вернет: <b>%s %s</b>\n" +
-                                "• Прибыль на росте цены (скидка): <b>+%s %s</b>\n\n" +
-                                "🎯 <b>ИТОГОВЫЙ ДОХОД:</b>\n" +
-                                "• Чистая прибыль: <b>+%s %s</b> (<b>+%.1f%%</b> к вложениям)\n" +
-                                "• Доходность годовых (YTM): <b>%.2f%%</b>\n" +
-                                "• Срок до возврата капитала: %s",
-                                escapeHtml(name), (b.getInstrument() != null && b.getInstrument().getCode() != null ? b.getInstrument().getCode() : rawTicker),
-                                formatMoney(BigDecimal.valueOf(amount)), cur,
-                                count, formatMoney(pricePerBond), cur,
-                                formatMoney(totalInvested), cur,
-                                formatMoney(BigDecimal.valueOf(quarterlyPayout)), cur,
-                                formatMoney(BigDecimal.valueOf(annualCouponIncome)), cur,
-                                formatMoney(BigDecimal.valueOf(totalCouponsAllTime)), cur,
-                                formatMoney(totalNominal), cur,
-                                formatMoney(capitalGain), cur,
-                                formatMoney(BigDecimal.valueOf(grandTotalReturn)), cur,
-                                roiPercent,
-                                b.getEffectiveYield() != null ? b.getEffectiveYield().doubleValue() : couponRateVal,
-                                durationStr
-                        );
-                    }
+                                .then(Mono.empty())
+                )
+                .onErrorResume(IllegalArgumentException.class, e -> {
                     InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                             .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("💰 100 000 ₸").callbackData("CALC_" + rawTicker + "_100000").build(),
-                                    InlineKeyboardButton.builder().text("💰 500 000 ₸").callbackData("CALC_" + rawTicker + "_500000").build()
+                                    InlineKeyboardButton.builder().text("📊 Карточка акции " + rawTicker).callbackData("STOCK_" + rawTicker).build(),
+                                    InlineKeyboardButton.builder().text("📈 Теханализ RSI/SMA").callbackData("TA_" + rawTicker).build()
                             ))
                             .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("💰 1 000 000 ₸").callbackData("CALC_" + rawTicker + "_1000000").build(),
-                                    InlineKeyboardButton.builder().text("💰 5 000 000 ₸").callbackData("CALC_" + rawTicker + "_5000000").build()
-                            ))
-                            .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("📄 Паспорт облигации").callbackData("BOND_" + rawTicker).build(),
-                                    InlineKeyboardButton.builder().text("🔍 Другая бумага").switchInlineQueryCurrentChat("").build()
+                                    InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + rawTicker).build(),
+                                    InlineKeyboardButton.builder().text("⚖️ KASE vs AIX").callbackData("COMPARE_" + rawTicker).build()
                             ))
                             .build();
-                    sendMessage(chatId, res, kb);
+                    sendMessage(chatId, String.format(
+                            "⚠️ <b>%s</b> — это <b>акция</b>, а не облигация.\n\n" +
+                            "Калькулятор доходности <code>/calc</code> рассчитывает купонные выплаты и дисконт к номиналу для долговых бумаг (облигаций).\n\n" +
+                            "Для анализа акции %s воспользуйтесь кнопками ниже:",
+                            rawTicker, rawTicker
+                    ), kb);
+                    return Mono.empty();
+                })
+                .onErrorResume(e -> {
+                    log.error("Error calculating bond return for {}: {}", rawTicker, e.getMessage());
+                    sendMessage(chatId, "Не удалось выполнить расчет по бумаге <code>" + escapeHtml(rawTicker) + "</code>.", null);
+                    return Mono.empty();
                 })
                 .subscribe();
     }

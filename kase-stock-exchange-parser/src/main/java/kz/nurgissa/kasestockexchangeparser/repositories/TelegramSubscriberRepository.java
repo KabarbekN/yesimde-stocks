@@ -43,4 +43,17 @@ public interface TelegramSubscriberRepository extends ReactiveCrudRepository<Tel
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     );
+
+    @Modifying
+    @Query("""
+        UPDATE telegram_subscriber
+        SET sub_new_bonds = false,
+            sub_discounts = false,
+            sub_whales = false,
+            sub_coupons = false,
+            sub_stocks = false,
+            updated_at = :now
+        WHERE chat_id = :chatId
+    """)
+    Mono<Integer> deactivateAllSubscriptions(Long chatId, LocalDateTime now);
 }
