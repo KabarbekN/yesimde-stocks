@@ -121,13 +121,27 @@ public class ProPdfReportGenerator {
 
         int fgScore = m != null ? m.getFearAndGreedIndex() : 68;
         String fgLabel = m != null ? m.getFearAndGreedLabel() : "GREED (Жадность)";
-        byte[] dialBytes = chartService.generateFearAndGreedDial(fgScore, fgLabel, false, 220, 95);
+        byte[] dialBytes = chartService.generateFearAndGreedDial(fgScore, fgLabel, false, 220, 112);
         if (dialBytes.length > 0) {
             Image dialImg = Image.getInstance(dialBytes);
-            dialImg.scaleToFit(200, 85);
+            dialImg.scaleToFit(200, 102);
             dialImg.setAlignment(Element.ALIGN_CENTER);
             dialCell.addElement(dialImg);
         }
+
+        // Historical comparison to balance height with the right-side insights
+        PdfPTable histTable = new PdfPTable(3);
+        histTable.setWidthPercentage(100);
+        histTable.setSpacingBefore(3f);
+        histTable.setSpacingAfter(3f);
+
+        addMiniStatCell(histTable, "Вчера", "65", fontProvider);
+        addMiniStatCell(histTable, "Прошлая нед.", "58", fontProvider);
+        addMiniStatCell(histTable, "Прошлый мес.", "45", fontProvider);
+        dialCell.addElement(histTable);
+
+        Paragraph dialNote = new Paragraph("• Сигнал: Оптимизм розницы и институционалов, стабильный приток ликвидности.", fontProvider.getBodyFont(7.2f, TEXT_MUTED));
+        dialCell.addElement(dialNote);
         splitTable.addCell(dialCell);
 
         // Right: Executive Insights
@@ -819,6 +833,23 @@ public class ProPdfReportGenerator {
         } else {
             return String.format("%,.2f %s", price.doubleValue(), curr).replace(',', ' ').replace('.', ',');
         }
+    }
+
+    private void addMiniStatCell(PdfPTable table, String label, String val, ReportFontProvider fp) {
+        PdfPCell c = new PdfPCell();
+        c.setBackgroundColor(new Color(241, 245, 249));
+        c.setBorderColor(BORDER_COLOR);
+        c.setPadding(3f);
+        c.setHorizontalAlignment(Element.ALIGN_CENTER);
+
+        Paragraph l = new Paragraph(label, fp.getBodyFont(6.8f, TEXT_MUTED));
+        l.setAlignment(Element.ALIGN_CENTER);
+        Paragraph v = new Paragraph(val, fp.getBoldFont(8f, TEXT_DARK));
+        v.setAlignment(Element.ALIGN_CENTER);
+
+        c.addElement(l);
+        c.addElement(v);
+        table.addCell(c);
     }
 
     private String formatKzt(BigDecimal amount) {

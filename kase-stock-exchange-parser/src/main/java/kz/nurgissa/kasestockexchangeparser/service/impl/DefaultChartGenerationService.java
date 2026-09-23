@@ -202,34 +202,64 @@ public class DefaultChartGenerationService implements ChartGenerationService {
         g2.setColor(bgColor);
         g2.fillRect(0, 0, width, height);
 
-        // Draw Gauge Arc
-        int arcX = 30;
-        int arcY = 20;
-        int arcW = width - 60;
-        int arcH = (height - 40) * 2;
+        // TRUE CIRCLE GEOMETRY (arcW == arcH guarantees zero vertical squishing!)
+        int strokeWidth = 14;
+        // Diameter fits width and height (semi-circle requires height >= diameter / 2 + padding)
+        int diameter = Math.min(width - strokeWidth * 2 - 24, (height - 30) * 2);
+        int arcW = diameter;
+        int arcH = diameter;
+        int arcX = (width - diameter) / 2;
+        int arcY = 10;
 
-        g2.setStroke(new BasicStroke(16, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        // Background track (Light Slate)
         g2.setColor(new Color(226, 232, 240));
         g2.draw(new Arc2D.Double(arcX, arcY, arcW, arcH, 0, 180, Arc2D.OPEN));
 
         // Active Arc
-        double angle = 180.0 * (score / 100.0);
-        g2.setColor(score > 55 ? new Color(16, 185, 129) : (score < 45 ? new Color(239, 68, 68) : new Color(245, 158, 11)));
+        int clampedScore = Math.max(0, Math.min(100, score));
+        double angle = 180.0 * (clampedScore / 100.0);
+        Color activeColor;
+        if (clampedScore >= 75) {
+            activeColor = new Color(5, 150, 105); // Emerald 600
+        } else if (clampedScore >= 55) {
+            activeColor = new Color(16, 185, 129); // Emerald 500
+        } else if (clampedScore >= 45) {
+            activeColor = new Color(245, 158, 11); // Amber 500
+        } else if (clampedScore >= 25) {
+            activeColor = new Color(249, 115, 22); // Orange 500
+        } else {
+            activeColor = new Color(239, 68, 68); // Red 500
+        }
+
+        g2.setColor(activeColor);
+        // Java Arc2D: startAngle = 180 - angle, extent = angle (counter-clockwise from West)
         g2.draw(new Arc2D.Double(arcX, arcY, arcW, arcH, 180 - angle, angle, Arc2D.OPEN));
 
-        // Text
+        int centerX = width / 2;
+        int centerY = arcY + diameter / 2;
+
+        // Big Score text in the center
         g2.setColor(new Color(15, 23, 42));
-        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 28));
+        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 26));
         String scoreStr = String.valueOf(score);
         FontMetrics fm = g2.getFontMetrics();
         int scoreWidth = fm.stringWidth(scoreStr);
-        g2.drawString(scoreStr, (width - scoreWidth) / 2, height / 2 + 15);
+        g2.drawString(scoreStr, centerX - scoreWidth / 2, centerY - 6);
 
-        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
-        g2.setColor(score > 55 ? new Color(16, 185, 129) : (score < 45 ? new Color(239, 68, 68) : new Color(245, 158, 11)));
+        // Label text below score
+        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 10));
+        g2.setColor(activeColor);
         fm = g2.getFontMetrics();
         int labelWidth = fm.stringWidth(label);
-        g2.drawString(label, (width - labelWidth) / 2, height / 2 + 35);
+        g2.drawString(label, centerX - labelWidth / 2, centerY + 10);
+
+        // Scale bounds (0 and 100)
+        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 8));
+        g2.setColor(new Color(148, 163, 184));
+        g2.drawString("0", arcX - 4, centerY + 14);
+        g2.drawString("100", arcX + diameter - 10, centerY + 14);
 
         g2.dispose();
 
