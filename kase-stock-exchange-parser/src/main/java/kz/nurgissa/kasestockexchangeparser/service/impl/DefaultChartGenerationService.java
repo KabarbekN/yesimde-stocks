@@ -54,28 +54,29 @@ public class DefaultChartGenerationService implements ChartGenerationService {
                 false
         );
 
-        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
-        Color fgColor = darkMode ? new Color(226, 232, 240) : new Color(30, 41, 59);
-        Color barColor = darkMode ? new Color(14, 165, 233) : new Color(37, 99, 235);
+        Color bgColor = Color.WHITE;
+        Color fgColor = new Color(30, 41, 59);
+        Color barColor = new Color(37, 99, 235);
 
         chart.setBackgroundPaint(bgColor);
         chart.getTitle().setPaint(fgColor);
-        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
 
         CategoryPlot plot = chart.getCategoryPlot();
-        plot.setBackgroundPaint(darkMode ? new Color(24, 33, 56) : new Color(248, 250, 252));
-        plot.setOutlinePaint(null);
-        plot.setRangeGridlinePaint(darkMode ? new Color(51, 65, 85) : new Color(226, 232, 240));
+        plot.setBackgroundPaint(new Color(248, 250, 252));
+        plot.setOutlinePaint(new Color(226, 232, 240));
+        plot.setRangeGridlinePaint(new Color(226, 232, 240));
 
         CategoryAxis domainAxis = plot.getDomainAxis();
         domainAxis.setTickLabelPaint(fgColor);
         domainAxis.setLabelPaint(fgColor);
-        domainAxis.setTickLabelFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+        domainAxis.setTickLabelFont(new Font(Font.SANS_SERIF, Font.BOLD, 10));
+        domainAxis.setCategoryLabelPositions(org.jfree.chart.axis.CategoryLabelPositions.UP_45);
 
         NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
         rangeAxis.setTickLabelPaint(fgColor);
         rangeAxis.setLabelPaint(fgColor);
-        rangeAxis.setTickLabelFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+        rangeAxis.setTickLabelFont(new Font(Font.SANS_SERIF, Font.PLAIN, 9));
 
         BarRenderer renderer = (BarRenderer) plot.getRenderer();
         renderer.setBarPainter(new StandardBarPainter());
@@ -112,12 +113,12 @@ public class DefaultChartGenerationService implements ChartGenerationService {
                 false
         );
 
-        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
-        Color fgColor = darkMode ? new Color(226, 232, 240) : new Color(30, 41, 59);
+        Color bgColor = Color.WHITE;
+        Color fgColor = new Color(30, 41, 59);
 
         chart.setBackgroundPaint(bgColor);
         chart.getTitle().setPaint(fgColor);
-        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
         if (chart.getLegend() != null) {
             chart.getLegend().setBackgroundPaint(bgColor);
             chart.getLegend().setItemPaint(fgColor);
@@ -125,17 +126,17 @@ public class DefaultChartGenerationService implements ChartGenerationService {
         }
 
         CategoryPlot plot = chart.getCategoryPlot();
-        plot.setBackgroundPaint(darkMode ? new Color(24, 33, 56) : new Color(248, 250, 252));
-        plot.setOutlinePaint(null);
-        plot.setRangeGridlinePaint(darkMode ? new Color(51, 65, 85) : new Color(226, 232, 240));
+        plot.setBackgroundPaint(new Color(248, 250, 252));
+        plot.setOutlinePaint(new Color(226, 232, 240));
+        plot.setRangeGridlinePaint(new Color(226, 232, 240));
 
         plot.getDomainAxis().setTickLabelPaint(fgColor);
         plot.getDomainAxis().setLabelPaint(fgColor);
         plot.getRangeAxis().setTickLabelPaint(fgColor);
         plot.getRangeAxis().setLabelPaint(fgColor);
 
-        plot.getRenderer().setSeriesPaint(0, new Color(59, 130, 246)); // Blue
-        plot.getRenderer().setSeriesPaint(1, new Color(16, 185, 129)); // Emerald
+        plot.getRenderer().setSeriesPaint(0, new Color(37, 99, 235)); // Royal Blue
+        plot.getRenderer().setSeriesPaint(1, new Color(16, 185, 129)); // Emerald Green
 
         return renderChartToPng(chart, width, height);
     }
@@ -158,24 +159,24 @@ public class DefaultChartGenerationService implements ChartGenerationService {
                 false
         );
 
-        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
-        Color fgColor = darkMode ? new Color(226, 232, 240) : new Color(30, 41, 59);
+        Color bgColor = Color.WHITE;
+        Color fgColor = new Color(30, 41, 59);
 
         chart.setBackgroundPaint(bgColor);
         chart.getTitle().setPaint(fgColor);
-        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
         if (chart.getLegend() != null) {
             chart.getLegend().setBackgroundPaint(bgColor);
             chart.getLegend().setItemPaint(fgColor);
-            chart.getLegend().setItemFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+            chart.getLegend().setItemFont(new Font(Font.SANS_SERIF, Font.PLAIN, 9));
         }
 
         org.jfree.chart.plot.PiePlot plot = (org.jfree.chart.plot.PiePlot) chart.getPlot();
-        plot.setBackgroundPaint(bgColor);
-        plot.setOutlinePaint(null);
+        plot.setBackgroundPaint(new Color(248, 250, 252));
+        plot.setOutlinePaint(new Color(226, 232, 240));
         plot.setLabelBackgroundPaint(bgColor);
         plot.setLabelPaint(fgColor);
-        plot.setLabelFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+        plot.setLabelFont(new Font(Font.SANS_SERIF, Font.PLAIN, 9));
 
         plot.setSectionPaint("Нефть и Газ (KMGZ)", new Color(2, 132, 199));
         plot.setSectionPaint("Банки & FinTech (HSBK, CCBN, KSPI)", new Color(16, 185, 129));
@@ -189,12 +190,15 @@ public class DefaultChartGenerationService implements ChartGenerationService {
 
     @Override
     public byte[] generateFearAndGreedDial(int score, String label, boolean darkMode, int width, int height) {
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        int scale = 2; // High-DPI Retina
+        BufferedImage image = new BufferedImage(width * scale, height * scale, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2 = image.createGraphics();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2.scale(scale, scale);
 
-        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
+        Color bgColor = Color.WHITE;
         g2.setColor(bgColor);
         g2.fillRect(0, 0, width, height);
 
@@ -205,7 +209,7 @@ public class DefaultChartGenerationService implements ChartGenerationService {
         int arcH = (height - 40) * 2;
 
         g2.setStroke(new BasicStroke(16, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        g2.setColor(darkMode ? new Color(30, 41, 59) : new Color(226, 232, 240));
+        g2.setColor(new Color(226, 232, 240));
         g2.draw(new Arc2D.Double(arcX, arcY, arcW, arcH, 0, 180, Arc2D.OPEN));
 
         // Active Arc
@@ -214,7 +218,7 @@ public class DefaultChartGenerationService implements ChartGenerationService {
         g2.draw(new Arc2D.Double(arcX, arcY, arcW, arcH, 180 - angle, angle, Arc2D.OPEN));
 
         // Text
-        g2.setColor(darkMode ? Color.WHITE : new Color(15, 23, 42));
+        g2.setColor(new Color(15, 23, 42));
         g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 28));
         String scoreStr = String.valueOf(score);
         FontMetrics fm = g2.getFontMetrics();
@@ -240,7 +244,17 @@ public class DefaultChartGenerationService implements ChartGenerationService {
 
     private byte[] renderChartToPng(JFreeChart chart, int width, int height) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            BufferedImage image = chart.createBufferedImage(width, height);
+            chart.setAntiAlias(true);
+            chart.setTextAntiAlias(true);
+            int scale = 2; // High-DPI Retina
+            BufferedImage image = new BufferedImage(width * scale, height * scale, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = image.createGraphics();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.scale(scale, scale);
+            chart.draw(g2, new Rectangle(0, 0, width, height));
+            g2.dispose();
             ImageIO.write(image, "PNG", baos);
             return baos.toByteArray();
         } catch (Exception e) {

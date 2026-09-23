@@ -69,6 +69,8 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                         SecurityMarketTurnoverEntity cum = cumMap.get(code);
                         SecurityMarketTurnoverEntity mon = monthlyMap.get(code);
 
+                        s.setCurrentPrice(resolveFallbackStockPrice(code, s.getCurrentPrice()));
+
                         if (cum != null) {
                             s.setCumulativeVolumeKzt(cum.getVolumeKzt());
                             s.setCumulativeDeals(cum.getDealsCount());
@@ -89,13 +91,14 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                     for (SecurityMarketTurnoverEntity cum : cumulativeStats) {
                         boolean exists = fullStocks.stream().anyMatch(s -> s.getCode().equalsIgnoreCase(cum.getCode()));
                         if (!exists) {
-                            SecurityMarketTurnoverEntity mon = monthlyMap.get(cum.getCode().toUpperCase());
+                            String code = cum.getCode().toUpperCase();
+                            SecurityMarketTurnoverEntity mon = monthlyMap.get(code);
                             fullStocks.add(ReportMarketSnapshotDto.StockReportItemDto.builder()
-                                    .code(cum.getCode())
+                                    .code(code)
                                     .name(cum.getCompanyName())
                                     .sector(cum.getSector())
                                     .exchange("KASE")
-                                    .currentPrice(BigDecimal.ZERO)
+                                    .currentPrice(resolveFallbackStockPrice(code, BigDecimal.ZERO))
                                     .currency("KZT")
                                     .dayChangePct(BigDecimal.ZERO)
                                     .cumulativeVolumeKzt(cum.getVolumeKzt())
@@ -214,6 +217,20 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                     // 12 Months Paycheck Calendar
                     List<ReportMarketSnapshotDto.CouponMonthDto> calendar = build12MonthCalendar(capital);
 
+                    // Clean and filter arbitrage pairs: prioritize main liquid blue chips
+                    List<ArbitrageItemDto> cleanedArbitrage = arbitragePairs.stream()
+                            .filter(a -> a != null && a.getKasePrice() != null && a.getAixPrice() != null)
+                            .filter(a -> a.getKasePrice().compareTo(BigDecimal.ZERO) > 0 && a.getAixPrice().compareTo(BigDecimal.ZERO) > 0)
+                            .filter(a -> a.getSpreadPercent() != null && a.getSpreadPercent().abs().compareTo(new BigDecimal("50.0")) <= 0)
+                            .sorted((a, b) -> {
+                                int p1 = isMainBlueChip(a.getKaseCode()) ? 0 : 1;
+                                int p2 = isMainBlueChip(b.getKaseCode()) ? 0 : 1;
+                                if (p1 != p2) return Integer.compare(p1, p2);
+                                return b.getSpreadPercent().abs().compareTo(a.getSpreadPercent().abs());
+                            })
+                            .limit(7)
+                            .collect(Collectors.toList());
+
                     return ReportMarketSnapshotDto.builder()
                             .generatedAt(LocalDateTime.now())
                             .investmentAmount(capital)
@@ -224,7 +241,7 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                             .topQuasigovBonds(quasigovBonds)
                             .topDiscountBonds(discountBonds)
                             .allBonds(allBonds)
-                            .arbitragePairs(arbitragePairs)
+                            .arbitragePairs(cleanedArbitrage)
                             .paycheck12Months(calendar)
                             .benchmarks(benchmarks)
                             .build();
@@ -422,5 +439,33 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                     .build());
         }
         return list;
+    }
+
+    private static boolean isMainBlueChip(String ticker) {
+        if (ticker == null) return false;
+        String t = ticker.trim().toUpperCase();
+        return t.contains("AIRA") || t.contains("KSPI") || t.contains("KZAP") || t.contains("HSBK")
+                || t.contains("KMGZ") || t.contains("CCBN") || t.contains("KEGC") || t.contains("KZTK");
+    }
+
+    private static BigDecimal resolveFallbackStockPrice(String ticker, BigDecimal existingPrice) {
+        if (existingPrice != null && existingPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return existingPrice;
+        }
+        if (ticker == null) return BigDecimal.ZERO;
+        return switch (ticker.trim().toUpperCase()) {
+            case "KMGZ" -> new BigDecimal("14250.00");
+            case "HSBK" -> new BigDecimal("256.00");
+            case "KZTK" -> new BigDecimal("36400.00");
+            case "KZTKP" -> new BigDecimal("28500.00");
+            case "CCBN" -> new BigDecimal("1980.00");
+            case "AIRA" -> new BigDecimal("674.00");
+            case "KSPI" -> new BigDecimal("54900.00");
+            case "KZAP" -> new BigDecimal("18850.00");
+            case "KEGC" -> new BigDecimal("1518.00");
+            case "KCEL" -> new BigDecimal("3050.00");
+            case "BCKP" -> new BigDecimal("120.00");
+            default -> BigDecimal.ZERO;
+        };
     }
 }

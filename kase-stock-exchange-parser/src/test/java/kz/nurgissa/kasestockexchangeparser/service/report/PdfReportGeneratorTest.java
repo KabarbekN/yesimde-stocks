@@ -34,6 +34,14 @@ class PdfReportGeneratorTest {
         // Standard PDF file signature starts with %PDF-
         String header = new String(pdfBytes, 0, Math.min(pdfBytes.length, 8), StandardCharsets.US_ASCII);
         assertThat(header).startsWith("%PDF-");
+
+        try {
+            com.lowagie.text.pdf.PdfReader reader = new com.lowagie.text.pdf.PdfReader(pdfBytes);
+            assertThat(reader.getNumberOfPages()).isEqualTo(6);
+            java.nio.file.Files.write(java.nio.file.Path.of("target/test_pro_report.pdf"), pdfBytes);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test
@@ -47,5 +55,13 @@ class PdfReportGeneratorTest {
 
         String header = new String(pdfBytes, 0, Math.min(pdfBytes.length, 8), StandardCharsets.US_ASCII);
         assertThat(header).startsWith("%PDF-");
+
+        try {
+            com.lowagie.text.pdf.PdfReader reader = new com.lowagie.text.pdf.PdfReader(pdfBytes);
+            assertThat(reader.getNumberOfPages()).isEqualTo(4);
+            java.nio.file.Files.write(java.nio.file.Path.of("target/test_light_report.pdf"), pdfBytes);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
