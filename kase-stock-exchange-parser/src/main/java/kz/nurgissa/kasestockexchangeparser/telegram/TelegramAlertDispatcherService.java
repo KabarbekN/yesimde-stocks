@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -120,7 +121,40 @@ public class TelegramAlertDispatcherService {
                                 .build()
                         ).flatMap(cd -> {
                             String message = buildNewBondMessage(bond, ticker);
-                            InlineKeyboardMarkup keyboard = buildBondInlineKeyboard(code);
+                            InlineKeyboardMarkup keyboard = buildNewBondInlineKeyboard(bond, ticker);
+                            return subscriberRepository.findAllBySubNewBondsTrue()
+                                    .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                                    .then(Mono.empty());
+                        })
+                )
+                .then();
+    }
+
+    /**
+     * Alert triggered when a previously pending bond gets its terms or coupon published by KASE.
+     */
+    public Mono<Void> broadcastBondTermsUpdatedAlert(SecurityInstrumentEntity bond, TickerEntity ticker) {
+        if (!isEnabled() || bond == null || bond.getCode() == null || ticker == null) {
+            return Mono.empty();
+        }
+
+        String code = bond.getCode();
+        BigDecimal coupon = ticker.getCupon() != null ? ticker.getCupon() : ticker.getCupon2();
+        if (coupon == null || coupon.compareTo(BigDecimal.ZERO) <= 0) {
+            return Mono.empty();
+        }
+
+        return cooldownRepository.findByAlertTypeAndTicker("TERMS_UPDATED", code)
+                .switchIfEmpty(
+                        cooldownRepository.save(AlertCooldownEntity.builder()
+                                .alertType("TERMS_UPDATED")
+                                .ticker(code)
+                                .lastSentAt(LocalDateTime.now())
+                                .lastValue(coupon)
+                                .build()
+                        ).flatMap(cd -> {
+                            String message = buildBondTermsUpdatedMessage(bond, ticker);
+                            InlineKeyboardMarkup keyboard = buildBondTermsUpdatedKeyboard(code);
                             return subscriberRepository.findAllBySubNewBondsTrue()
                                     .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                                     .then(Mono.empty());
@@ -345,21 +379,68 @@ public class TelegramAlertDispatcherService {
         String finish = ticker != null && ticker.getFinishDate() != null ? ticker.getFinishDate().toString() : "По регламенту выпуска";
         String cur = ticker != null && ticker.getCurrency() != null ? ticker.getCurrency() : "KZT";
 
+        String code = bond.getCode();
+        boolean isPrivatePlacement = (code != null && code.toLowerCase().contains("pp"))
+                || (bond.getBoardRu() != null && (bond.getBoardRu().toLowerCase().contains("частн") || bond.getBoardRu().toLowerCase().contains("private")));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("🆕 <b>Новый выпуск облигаций на KASE</b>\n\n");
+        sb.append("<b>Эмитент:</b> ").append(escapeHtml(name != null ? name : code)).append("\n");
+        sb.append("<b>Тикер:</b> <code>").append(code).append("</code>\n");
+
+        if (isPrivatePlacement) {
+            sb.append("<b>Формат:</b> 🔒 <b>Частное размещение (Private Placement)</b>\n");
+        } else {
+            sb.append("<b>Формат:</b> 🌐 Публичный биржевой выпуск\n");
+        }
+
+        if (coupon != null && coupon.compareTo(BigDecimal.ZERO) > 0) {
+            sb.append("<b>Купонная ставка:</b> <b>").append(coupon.toPlainString()).append("% годовых</b>\n");
+        } else {
+            sb.append("<b>Купонная ставка:</b> ⏳ <b>Определяется на торгах (по проспекту)</b>\n");
+            sb.append("• <i>Условия: плавающая ставка (Базовая ставка НБРК + маржа) либо по итогам аукциона заявок.</i>\n");
+        }
+
+        sb.append("<b>Дата погашения:</b> ").append(finish).append("\n");
+        sb.append("<b>Валюта выпуска:</b> ").append(cur).append("\n");
+
+        String board = (bond.getBoardRu() != null && !bond.getBoardRu().isBlank())
+                ? bond.getBoardRu()
+                : (isPrivatePlacement ? "Частное размещение" : "Основная площадка");
+        sb.append("<b>Сектор:</b> ").append(board).append("\n\n");
+
+        if (isPrivatePlacement) {
+            sb.append("ℹ️ <i>Облигации частного размещения выпускаются для институциональных инвесторов по закрытой подписке.</i>\n");
+        } else {
+            sb.append("<i>Бумага добавлена в биржевой список KASE и скоро станет доступна для открытых торгов.</i>\n");
+        }
+
+        if (bond.getOrgCode() != null && !bond.getOrgCode().isBlank()) {
+            sb.append("\n📄 <i>Проспект выпуска и решение эмитента: <a href=\"https://kase.kz/ru/issuers/").append(bond.getOrgCode()).append("/\">kase.kz/ru/issuers/").append(bond.getOrgCode()).append("/</a></i>");
+        }
+
+        return sb.toString();
+    }
+
+    private String buildBondTermsUpdatedMessage(SecurityInstrumentEntity bond, TickerEntity ticker) {
+        String name = bond.getOrgShortNameRu() != null ? bond.getOrgShortNameRu() : bond.getOrgNameRu();
+        BigDecimal coupon = ticker.getCupon() != null ? ticker.getCupon() : ticker.getCupon2();
+        String finish = ticker.getFinishDate() != null ? ticker.getFinishDate().toString() : "По регламенту выпуска";
+        String cur = ticker.getCurrency() != null ? ticker.getCurrency() : "KZT";
+
         return String.format(
-                "🆕 <b>Новый выпуск облигаций на KASE</b>\n\n" +
+                "🔔 <b>Утверждена ставка по выпуску на KASE!</b>\n\n" +
                 "<b>Эмитент:</b> %s\n" +
                 "<b>Тикер:</b> <code>%s</code>\n" +
-                "<b>Купонная ставка:</b> %s\n" +
+                "<b>Ставка купона:</b> <b>%.2f%% годовых</b>\n" +
                 "<b>Дата погашения:</b> %s\n" +
-                "<b>Валюта выпуска:</b> %s\n" +
-                "<b>Сектор:</b> %s\n\n" +
-                "<i>Бумага добавлена в биржевой список KASE и скоро станет доступна для торгов.</i>",
+                "<b>Валюта:</b> %s\n\n" +
+                "💡 <i>Биржа KASE внесла параметры выпуска в торговый реестр. Бумага готова к расчетам доходности.</i>",
                 escapeHtml(name != null ? name : bond.getCode()),
                 bond.getCode(),
-                coupon != null ? coupon.toPlainString() + "% годовых" : "Плавающая / Уточняется",
+                coupon != null ? coupon.doubleValue() : 0.0,
                 finish,
-                cur,
-                (bond.getBoardRu() != null && !bond.getBoardRu().isBlank()) ? bond.getBoardRu() : "Основная площадка"
+                cur
         );
     }
 
@@ -421,6 +502,52 @@ public class TelegramAlertDispatcherService {
                         InlineKeyboardButton.builder()
                                 .text("🧮 Посчитать доход")
                                 .callbackData("CALC_" + ticker)
+                                .build(),
+                        InlineKeyboardButton.builder()
+                                .text("📊 Открыть на KASE")
+                                .url("https://kase.kz/ru/bonds/show/" + ticker + "/")
+                                .build()
+                ))
+                .build();
+    }
+
+    private InlineKeyboardMarkup buildNewBondInlineKeyboard(SecurityInstrumentEntity bond, TickerEntity ticker) {
+        String code = bond.getCode();
+        String orgCode = bond.getOrgCode();
+        BigDecimal coupon = (ticker != null) ? (ticker.getCupon() != null ? ticker.getCupon() : ticker.getCupon2()) : null;
+        boolean hasCoupon = coupon != null && coupon.compareTo(BigDecimal.ZERO) > 0;
+
+        List<InlineKeyboardRow> rows = new ArrayList<>();
+        if (hasCoupon) {
+            rows.add(new InlineKeyboardRow(
+                    InlineKeyboardButton.builder().text("🧮 Посчитать доход").callbackData("CALC_" + code + "_500000").build(),
+                    InlineKeyboardButton.builder().text("📊 Открыть на KASE").url("https://kase.kz/ru/bonds/show/" + code + "/").build()
+            ));
+        } else {
+            List<InlineKeyboardButton> topRow = new ArrayList<>();
+            topRow.add(InlineKeyboardButton.builder().text("❓ Где ставка?").callbackData("WHY_NO_COUPON_" + code).build());
+            if (orgCode != null && !orgCode.isBlank()) {
+                topRow.add(InlineKeyboardButton.builder().text("🏢 Проспект эмитента").url("https://kase.kz/ru/issuers/" + orgCode + "/").build());
+            } else {
+                topRow.add(InlineKeyboardButton.builder().text("📊 Страница KASE").url("https://kase.kz/ru/bonds/show/" + code + "/").build());
+            }
+            rows.add(new InlineKeyboardRow(topRow));
+        }
+
+        rows.add(new InlineKeyboardRow(
+                InlineKeyboardButton.builder().text("⭐ В избранное").callbackData("TRACK_" + code).build(),
+                InlineKeyboardButton.builder().text("📄 Паспорт бумаги").callbackData("BOND_" + code).build()
+        ));
+
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private InlineKeyboardMarkup buildBondTermsUpdatedKeyboard(String ticker) {
+        return InlineKeyboardMarkup.builder()
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder()
+                                .text("🧮 Рассчитать доход на 500k ₸")
+                                .callbackData("CALC_" + ticker + "_500000")
                                 .build(),
                         InlineKeyboardButton.builder()
                                 .text("📊 Открыть на KASE")

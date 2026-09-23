@@ -89,11 +89,26 @@ class TelegramAlertDispatcherServiceTest {
     @Test
     void broadcastNewBondAlert_shouldCompleteGracefullyWhenDisabled() {
         kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity bond = kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity.builder()
-                .code("BIGDb14")
-                .orgNameRu("BI Development")
-                .boardRu("")
+                .code("INCApp26")
+                .orgNameRu("Интергаз Центральная Азия")
+                .boardRu("Частное размещение")
+                .orgCode("INCA")
                 .build();
         StepVerifier.create(dispatcherService.broadcastNewBondAlert(bond, null))
+                .verifyComplete();
+    }
+
+    @Test
+    void broadcastBondTermsUpdatedAlert_shouldCompleteGracefullyWhenDisabled() {
+        kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity bond = kz.nurgissa.kasestockexchangeparser.model.entities.SecurityInstrumentEntity.builder()
+                .code("INCApp26")
+                .orgNameRu("Интергаз Центральная Азия")
+                .build();
+        kz.nurgissa.kasestockexchangeparser.model.entities.TickerEntity ticker = kz.nurgissa.kasestockexchangeparser.model.entities.TickerEntity.builder()
+                .cupon(BigDecimal.valueOf(15.25))
+                .currency("KZT")
+                .build();
+        StepVerifier.create(dispatcherService.broadcastBondTermsUpdatedAlert(bond, ticker))
                 .verifyComplete();
     }
 }

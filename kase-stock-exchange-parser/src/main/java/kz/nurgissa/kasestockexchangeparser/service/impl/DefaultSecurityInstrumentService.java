@@ -155,10 +155,41 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
 
     private Mono<Void> upsertTicker(TickerEntity ticker) {
         return tickerRepository.existsById(ticker.getSecurityInstrumentId())
-                .flatMap(exists -> exists
-                        ? tickerRepository.save(ticker).then()
-                        : template.insert(TickerEntity.class).using(ticker).then()
-                )
+                .flatMap(exists -> {
+                    if (exists) {
+                        return tickerRepository.findById(ticker.getSecurityInstrumentId())
+                                .flatMap(oldTicker -> {
+                                    boolean hadNoCoupon = (oldTicker.getCupon() == null || oldTicker.getCupon().compareTo(BigDecimal.ZERO) == 0)
+                                            && (oldTicker.getCupon2() == null || oldTicker.getCupon2().compareTo(BigDecimal.ZERO) == 0);
+                                    boolean hasCouponNow = (ticker.getCupon() != null && ticker.getCupon().compareTo(BigDecimal.ZERO) > 0)
+                                            || (ticker.getCupon2() != null && ticker.getCupon2().compareTo(BigDecimal.ZERO) > 0);
+
+                                    return tickerRepository.save(ticker)
+                                            .flatMap(savedTicker -> {
+                                                if (hadNoCoupon && hasCouponNow && alertDispatcherService.isEnabled()) {
+                                                    return securityInstrumentRepository.findById(ticker.getSecurityInstrumentId())
+                                                            .flatMap(instr -> alertDispatcherService.broadcastBondTermsUpdatedAlert(instr, savedTicker))
+                                                            .thenReturn(savedTicker);
+                                                }
+                                                return Mono.just(savedTicker);
+                                            })
+                                            .then();
+                                });
+                    } else {
+                        return template.insert(TickerEntity.class).using(ticker)
+                                .flatMap(savedTicker -> {
+                                    boolean hasCoupon = (savedTicker.getCupon() != null && savedTicker.getCupon().compareTo(BigDecimal.ZERO) > 0)
+                                            || (savedTicker.getCupon2() != null && savedTicker.getCupon2().compareTo(BigDecimal.ZERO) > 0);
+                                    if (hasCoupon && alertDispatcherService.isEnabled()) {
+                                        return securityInstrumentRepository.findById(savedTicker.getSecurityInstrumentId())
+                                                .flatMap(instr -> alertDispatcherService.broadcastBondTermsUpdatedAlert(instr, savedTicker))
+                                                .thenReturn(savedTicker);
+                                    }
+                                    return Mono.just(savedTicker);
+                                })
+                                .then();
+                    }
+                })
                 .onErrorResume(DuplicateKeyException.class, ex -> Mono.empty());
     }
 

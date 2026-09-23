@@ -1361,7 +1361,7 @@
                         <td class="px-3 py-2 text-slate-300 max-w-[200px] truncate">${b.orgShortNameRu || b.orgNameRu || '-'}</td>
                         <td class="px-3 py-2 text-right num-font">${priceStr}</td>
                         <td class="px-3 py-2 text-right num-font">${ytmStr}</td>
-                        <td class="px-3 py-2 text-right num-font text-blue-400">${b.cupon ? b.cupon.toFixed(2) + '%' : '-'}</td>
+                        <td class="px-3 py-2 text-right num-font text-blue-400">${b.cupon ? b.cupon.toFixed(2) + '%' : '<span class="text-amber-400/90 text-[11px] font-sans" title="Плавающая ставка / уточняется по проспекту">⏳ В проспекте</span>'}</td>
                         <td class="px-3 py-2 text-right num-font text-slate-400">${dtmStr}</td>
                         <td class="px-3 py-2 text-center num-font">${gspreadStr}</td>
                         <td class="px-3 py-2 text-center num-font">${b.liquidityScore || 0}/100</td>
@@ -1841,7 +1841,7 @@
                 // Format coupon (fixed or floating)
                 const c1 = ticker?.cupon;
                 const c2 = ticker?.cupon2;
-                let cuponText = '-';
+                let cuponText = '⏳ В проспекте (плавающая / на торгах)';
                 if (c1 != null && c2 != null && c1 > 0 && c2 > 0 && c1 !== c2) {
                     cuponText = `${Math.max(c1, c2).toFixed(2)}% (плавающий: маржа ${Math.min(c1, c2).toFixed(2)}%)`;
                 } else if (c1 != null && c1 > 0) {

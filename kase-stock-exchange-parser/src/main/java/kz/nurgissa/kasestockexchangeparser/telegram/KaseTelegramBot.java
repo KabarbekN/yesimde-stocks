@@ -338,6 +338,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 ticker = rest;
             }
             handleCalcCommand(chatId, "/calc " + ticker + " " + amount);
+        } else if (data.startsWith("WHY_NO_COUPON_")) {
+            String ticker = data.substring("WHY_NO_COUPON_".length());
+            sendWhyNoCouponExplanation(chatId, ticker);
         } else if (data.startsWith("BOND_")) {
             String ticker = data.substring("BOND_".length());
             handleBondCommand(chatId, "/bond " + ticker);
@@ -960,9 +963,11 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         }
                     }
 
-                    String couponStr = (couponRate != null && couponRate.compareTo(BigDecimal.ZERO) > 0)
+                    boolean isPendingCoupon = (couponRate == null || couponRate.compareTo(BigDecimal.ZERO) <= 0);
+                    String orgCode = b.getInstrument() != null ? b.getInstrument().getOrgCode() : null;
+                    String couponStr = !isPendingCoupon
                             ? couponRate.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
-                            : "Уточняется (новый выпуск / плавающий)";
+                            : "⏳ Определяется на торгах (по проспекту)";
                     String ytmStr = (ytm != null && ytm.compareTo(BigDecimal.ZERO) > 0)
                             ? ytm.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
                             : "Формируется рынком";
@@ -975,32 +980,86 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "• <b>Доходность к погашению (YTM):</b> <b>%s</b>\n" +
                             "• <b>Срок до погашения:</b> %s\n" +
                             "• <b>Объем торгов:</b> %s ₸\n\n" +
-                            "💡 <i>Нажмите кнопку ниже для быстрого расчета доходности на нужную сумму:</i>",
+                            "%s",
                             escapeHtml(name), ticker,
                             escapeHtml(issuer),
                             price.doubleValue(), formatMoney(buyPrice), cur,
                             couponStr,
                             ytmStr,
                             formatDuration(dtm),
-                            formatMoney(b.getInstrument() != null ? b.getInstrument().getVolkzt() : BigDecimal.ZERO)
+                            formatMoney(b.getInstrument() != null ? b.getInstrument().getVolkzt() : BigDecimal.ZERO),
+                            isPendingCoupon
+                                ? "ℹ️ <i>Ставка купона плавающая по формуле проспекта (Базовая ставка НБРК + маржа) либо определится по итогам специализированных торгов.</i>"
+                                : "💡 <i>Нажмите кнопку ниже для быстрого расчета доходности на нужную сумму:</i>"
                     );
-                    InlineKeyboardMarkup bondKb = InlineKeyboardMarkup.builder()
-                            .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("🧮 Рассчитать доход на 500 000 ₸").callbackData("CALC_" + ticker + "_500000").build()
-                            ))
-                            .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("💰 100k ₸").callbackData("CALC_" + ticker + "_100000").build(),
-                                    InlineKeyboardButton.builder().text("💰 1 млн ₸").callbackData("CALC_" + ticker + "_1000000").build(),
-                                    InlineKeyboardButton.builder().text("💰 5 млн ₸").callbackData("CALC_" + ticker + "_5000000").build()
-                            ))
-                            .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("⭐ В избранное").callbackData("TRACK_" + ticker).build(),
-                                    InlineKeyboardButton.builder().text("🌐 Страница KASE").url("https://kase.kz/ru/bonds/show/" + ticker + "/").build()
-                            ))
-                            .build();
-                    sendMessage(chatId, msg, bondKb);
+
+                    InlineKeyboardMarkup.InlineKeyboardMarkupBuilder kbBuilder = InlineKeyboardMarkup.builder();
+                    if (!isPendingCoupon) {
+                        kbBuilder.keyboardRow(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("🧮 Рассчитать доход на 500 000 ₸").callbackData("CALC_" + ticker + "_500000").build()
+                        ));
+                        kbBuilder.keyboardRow(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("💰 100k ₸").callbackData("CALC_" + ticker + "_100000").build(),
+                                InlineKeyboardButton.builder().text("💰 1 млн ₸").callbackData("CALC_" + ticker + "_1000000").build(),
+                                InlineKeyboardButton.builder().text("💰 5 млн ₸").callbackData("CALC_" + ticker + "_5000000").build()
+                        ));
+                    } else {
+                        List<InlineKeyboardButton> pRow = new ArrayList<>();
+                        pRow.add(InlineKeyboardButton.builder().text("❓ Где ставка?").callbackData("WHY_NO_COUPON_" + ticker).build());
+                        if (orgCode != null && !orgCode.isBlank()) {
+                            pRow.add(InlineKeyboardButton.builder().text("🏢 Проспект эмитента").url("https://kase.kz/ru/issuers/" + orgCode + "/").build());
+                        }
+                        kbBuilder.keyboardRow(new InlineKeyboardRow(pRow));
+                        kbBuilder.keyboardRow(new InlineKeyboardRow(
+                                InlineKeyboardButton.builder().text("🧮 Примерный расчет на 500k ₸").callbackData("CALC_" + ticker + "_500000").build()
+                        ));
+                    }
+                    kbBuilder.keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("⭐ В избранное").callbackData("TRACK_" + ticker).build(),
+                            InlineKeyboardButton.builder().text("🌐 Страница KASE").url("https://kase.kz/ru/bonds/show/" + ticker + "/").build()
+                    ));
+                    sendMessage(chatId, msg, kbBuilder.build());
                 })
                 .subscribe();
+    }
+
+    private void sendWhyNoCouponExplanation(Long chatId, String ticker) {
+        analyticsService.getInstrumentDetailByCode(ticker)
+                .doOnSuccess(detail -> {
+                    String orgCode = detail != null && detail.getInstrument() != null ? detail.getInstrument().getOrgCode() : null;
+                    String orgLink = (orgCode != null && !orgCode.isBlank())
+                            ? "https://kase.kz/ru/issuers/" + orgCode + "/"
+                            : "https://kase.kz/ru/bonds/show/" + ticker + "/";
+
+                    boolean isPP = ticker.toLowerCase().contains("pp");
+
+                    String msg = String.format(
+                            "ℹ️ <b>Почему у облигации <code>%s</code> не указана ставка купона?</b>\n\n" +
+                            "У свежих выпусков ценных бумаг на бирже KASE процентная ставка временно отсутствует в биржевом реестре в следующих случаях:\n\n" +
+                            "1️⃣ <b>Плавающая ставка по Проспекту выпуска:</b>\n" +
+                            "Ставка рассчитывается по формуле (например: <i>Базовая ставка НБРК + маржа 1%%</i>). Точный процент фиксируется на дату размещения торгов.\n\n" +
+                            "2️⃣ <b>Специализированные торги (Аукцион):</b>\n" +
+                            "Ставка доходности и цена отсечения формируются по результатам сбора заявок инвесторов во время первичного аукциона KASE.\n\n" +
+                            "%s" +
+                            "📄 <b>Где посмотреть условия и формулу?</b>\n" +
+                            "Официальный Проспект выпуска и решения органов эмитента публикуются на странице раскрытия информации KASE:\n" +
+                            "<a href=\"%s\">%s</a>\n\n" +
+                            "🔔 <i>Как только биржа KASE проведет торги и внесет ставку в реестр, наш бот автоматически обновит данные и пришлет вам уведомление!</i>",
+                            escapeHtml(ticker),
+                            isPP ? "3️⃣ <b>Частное размещение (Private Placement, «pp»):</b>\nВыпуск предназначен для адресного размещения среди институциональных фондов и банков по закрытой подписке.\n\n" : "",
+                            orgLink, orgLink
+                    );
+
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("🏢 Проспект на KASE").url(orgLink).build(),
+                                    InlineKeyboardButton.builder().text("⭐ В избранное").callbackData("TRACK_" + ticker).build()
+                            ))
+                            .build();
+
+                    sendMessage(chatId, msg, kb);
+                })
+                .subscribe(null, e -> sendMessage(chatId, "Информация по бумаге <code>" + ticker + "</code> обновляется.", null));
     }
 
     private void handlePartialSearch(Long chatId, String query, List<AixInstrumentDto> preloadedAix) {
