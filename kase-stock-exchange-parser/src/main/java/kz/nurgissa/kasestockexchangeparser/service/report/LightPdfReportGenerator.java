@@ -65,35 +65,35 @@ public class LightPdfReportGenerator {
         // Banner Box
         PdfPTable banner = new PdfPTable(1);
         banner.setWidthPercentage(100);
-        banner.setSpacingAfter(14f);
+        banner.setSpacingAfter(10f);
 
         PdfPCell bCell = new PdfPCell();
         bCell.setBackgroundColor(COLOR_PRIMARY);
-        bCell.setPadding(14f);
+        bCell.setPadding(13f);
         bCell.setBorder(Rectangle.NO_BORDER);
 
         Paragraph tag = new Paragraph("ГИД ЧАСТНОГО ИНВЕСТОРА В КАЗАХСТАНЕ  •  2026", fontProvider.getBoldFont(8.5f, new Color(191, 219, 254)));
-        tag.setSpacingAfter(4f);
+        tag.setSpacingAfter(3f);
         bCell.addElement(tag);
 
         Paragraph mainTitle = new Paragraph("Пассивный доход на KASE и AIX:\nКак заставить деньги работать", fontProvider.getTitleFont(18f, Color.WHITE));
-        mainTitle.setSpacingAfter(6f);
+        mainTitle.setSpacingAfter(5f);
         bCell.addElement(mainTitle);
 
-        Paragraph sub = new Paragraph("Пошаговое руководство для обычного человека: как надежно обогнать инфляцию, защитить тенге от девальвации и получать ежемесячный купонный доход с гарантированной ставкой налога 0%.", fontProvider.getBodyFont(9f, new Color(239, 246, 255)));
+        Paragraph sub = new Paragraph("Пошаговое руководство для обычного человека: как надежно обогнать инфляцию, защитить тенге от девальвации и получать ежемесячный купонный доход с гарантированной ставкой налога 0%.", fontProvider.getBodyFont(8.5f, new Color(239, 246, 255)));
         bCell.addElement(sub);
 
         banner.addCell(bCell);
         doc.add(banner);
 
         // 3 Key Rules
-        Paragraph kTitle = new Paragraph("3 ЗОЛОТЫХ ПРАВИЛА УМНОГО ИНВЕСТОРА В КАЗАХСТАНЕ", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        kTitle.setSpacingAfter(6f);
+        Paragraph kTitle = new Paragraph("3 ЗОЛОТЫХ ПРАВИЛА УМНОГО ИНВЕСТОРА В КАЗАХСТАНЕ", fontProvider.getBoldFont(10f, TEXT_DARK));
+        kTitle.setSpacingAfter(5f);
         doc.add(kTitle);
 
         PdfPTable takeTable = new PdfPTable(3);
         takeTable.setWidthPercentage(100);
-        takeTable.setSpacingAfter(12f);
+        takeTable.setSpacingAfter(10f);
 
         addTipCard(takeTable, "1. Налог 0% по закону", "Статья 341 Налогового кодекса РК полностью освобождает физлиц от ИПН с доходов по ценным бумагам на бирже KASE и AIX.", COLOR_SUCCESS);
         addTipCard(takeTable, "2. Ставка фиксируется", "В банке процент снизится уже через 6–12 месяцев, а по облигациям нацкомпаний ставка 17.5% гарантирована на 3–5 лет вперед.", COLOR_PRIMARY);
@@ -101,14 +101,14 @@ public class LightPdfReportGenerator {
         doc.add(takeTable);
 
         // Core Market Numbers
-        Paragraph sTitle = new Paragraph("МАСШТАБЫ КАЗАХСТАНСКОГО РЫНКА (KASE 2022–2026)", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        sTitle.setSpacingAfter(6f);
+        Paragraph sTitle = new Paragraph("МАСШТАБЫ КАЗАХСТАНСКОГО РЫНКА (KASE 2022–2026)", fontProvider.getBoldFont(10f, TEXT_DARK));
+        sTitle.setSpacingAfter(5f);
         doc.add(sTitle);
 
         PdfPTable statTable = new PdfPTable(2);
         statTable.setWidthPercentage(100);
         statTable.setWidths(new float[]{60f, 40f});
-        statTable.setSpacingAfter(12f);
+        statTable.setSpacingAfter(10f);
 
         addSimpleRow(statTable, "Совокупный объем торгов акциями:", "2.13 ТРИЛЛИОНА тенге");
         addSimpleRow(statTable, "Количество совершенных сделок:", "8 423 997 сделок");
@@ -117,22 +117,22 @@ public class LightPdfReportGenerator {
         doc.add(statTable);
 
         // Inflation vs Bonds Comparison
-        Paragraph compTitle = new Paragraph("РЕАЛЬНАЯ ДОХОДНОСТЬ: ИНФЛЯЦИЯ ПРОТИВ ОБЛИГАЦИЙ", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        compTitle.setSpacingAfter(6f);
+        Paragraph compTitle = new Paragraph("РЕАЛЬНАЯ ДОХОДНОСТЬ: ИНФЛЯЦИЯ ПРОТИВ ОБЛИГАЦИЙ", fontProvider.getBoldFont(10f, TEXT_DARK));
+        compTitle.setSpacingAfter(5f);
         doc.add(compTitle);
 
         PdfPTable compTable = new PdfPTable(2);
         compTable.setWidthPercentage(100);
         compTable.setWidths(new float[]{50f, 50f});
-        compTable.setSpacingAfter(12f);
+        compTable.setSpacingAfter(10f);
 
         PdfPCell inflCell = new PdfPCell();
         inflCell.setBackgroundColor(new Color(254, 242, 242));
         inflCell.setBorderColor(new Color(254, 202, 202));
-        inflCell.setPadding(8f);
-        Paragraph inflH = new Paragraph("🔴 Инфляция в Казахстане: 8.6%", fontProvider.getBoldFont(9.5f, COLOR_DANGER));
-        inflH.setSpacingAfter(3f);
-        Paragraph inflB = new Paragraph("При хранении денег на карточке или дома покупательная способность падает на 8.6% в год. За 5 лет 10 000 000 ₸ теряют свыше 3.5 млн ₸ своей реальной покупательской силы.", fontProvider.getBodyFont(8f, TEXT_MUTED));
+        inflCell.setPadding(7f);
+        Paragraph inflH = new Paragraph("🔴 Инфляция в Казахстане: 8.6%", fontProvider.getBoldFont(9f, COLOR_DANGER));
+        inflH.setSpacingAfter(2f);
+        Paragraph inflB = new Paragraph("При хранении денег на карточке или дома покупательная способность падает на 8.6% в год. За 5 лет 10 000 000 ₸ теряют свыше 3.5 млн ₸ своей реальной покупательской силы.", fontProvider.getBodyFont(7.5f, TEXT_MUTED));
         inflCell.addElement(inflH);
         inflCell.addElement(inflB);
         compTable.addCell(inflCell);
@@ -140,10 +140,10 @@ public class LightPdfReportGenerator {
         PdfPCell bondCell = new PdfPCell();
         bondCell.setBackgroundColor(new Color(236, 253, 245));
         bondCell.setBorderColor(new Color(167, 243, 208));
-        bondCell.setPadding(8f);
-        Paragraph bondH = new Paragraph("🟢 Облигации KASE Квазигос: 17.5%", fontProvider.getBoldFont(9.5f, COLOR_SUCCESS));
-        bondH.setSpacingAfter(3f);
-        Paragraph bondB = new Paragraph("Доходность квазигосударственных облигаций более чем в 2 раза опережает инфляцию. Реальная чистая доходность (Real Yield) превышает +8.9% годовых при минимальном риске.", fontProvider.getBodyFont(8f, TEXT_MUTED));
+        bondCell.setPadding(7f);
+        Paragraph bondH = new Paragraph("🟢 Облигации KASE Квазигос: 17.5%", fontProvider.getBoldFont(9f, COLOR_SUCCESS));
+        bondH.setSpacingAfter(2f);
+        Paragraph bondB = new Paragraph("Доходность квазигосударственных облигаций более чем в 2 раза опережает инфляцию. Реальная чистая доходность (Real Yield) превышает +8.9% годовых при минимальном риске.", fontProvider.getBodyFont(7.5f, TEXT_MUTED));
         bondCell.addElement(bondH);
         bondCell.addElement(bondB);
         compTable.addCell(bondCell);
@@ -152,23 +152,45 @@ public class LightPdfReportGenerator {
         // Tax Advantages Box
         PdfPTable taxTable = new PdfPTable(1);
         taxTable.setWidthPercentage(100);
+        taxTable.setSpacingAfter(10f);
+
         PdfPCell taxCell = new PdfPCell();
         taxCell.setBackgroundColor(new Color(239, 246, 255));
         taxCell.setBorderColor(new Color(191, 219, 254));
-        taxCell.setPadding(8f);
+        taxCell.setPadding(7f);
 
-        Paragraph taxH = new Paragraph("ПОЧЕМУ БИРЖА ВЫГОДНЕЕ ДРУГИХ АКТИВОВ (НАЛОГОВЫЕ ЛЬГОТЫ РК)", fontProvider.getBoldFont(9.5f, COLOR_PRIMARY));
-        taxH.setSpacingAfter(3f);
+        Paragraph taxH = new Paragraph("ПОЧЕМУ БИРЖА ВЫГОДНЕЕ ДРУГИХ АКТИВОВ (НАЛОГОВЫЕ ЛЬГОТЫ РК)", fontProvider.getBoldFont(9f, COLOR_PRIMARY));
+        taxH.setSpacingAfter(2f);
         Paragraph taxB = new Paragraph(
                 "• Биржа KASE & AIX: 0% налог на купоны и прирост стоимости ценных бумаг (ст. 341 Налогового кодекса РК).\n" +
                 "• Аренда недвижимости: 10% ИПН или обязательная регистрация ИП с уплатой налогов и ежемесячных соцплатежей.\n" +
                 "• Иностранные акции (Interactive Brokers): 10% налог с обязательной ежегодной сдачей декларации формы 240.00 / 270.00.",
-                fontProvider.getBodyFont(8f, TEXT_DARK)
+                fontProvider.getBodyFont(7.5f, TEXT_DARK)
         );
         taxCell.addElement(taxH);
         taxCell.addElement(taxB);
         taxTable.addCell(taxCell);
         doc.add(taxTable);
+
+        // Quick Start Tip (NEW)
+        PdfPTable tipTable = new PdfPTable(1);
+        tipTable.setWidthPercentage(100);
+        PdfPCell tipCell = new PdfPCell();
+        tipCell.setBackgroundColor(new Color(254, 243, 199));
+        tipCell.setBorderColor(new Color(252, 211, 77));
+        tipCell.setPadding(7f);
+
+        Paragraph tipH = new Paragraph("💡 С ЧЕГО НАЧАТЬ СЕГОДНЯ: ПЕРВЫЙ ШАГ БЕЗ РИСКА", fontProvider.getBoldFont(8.5f, COLOR_WARNING));
+        tipH.setSpacingAfter(2f);
+        Paragraph tipB = new Paragraph(
+                "Вам не нужны миллионы для старта: купите 1 облигацию Отбасы Банка (JSBNb13) или Казахстанского фонда устойчивости (KFUSb35) всего за 1 000 тенге прямо в приложении Halyk или Freedom. " +
+                "Вы на практике увидите, как начисляется купонный доход, и убедитесь в надежности механизма перед вложением крупного капитала.",
+                fontProvider.getBodyFont(7.5f, TEXT_DARK)
+        );
+        tipCell.addElement(tipH);
+        tipCell.addElement(tipB);
+        tipTable.addCell(tipCell);
+        doc.add(tipTable);
     }
 
     private void renderPage2AssetBattle(Document doc, ReportMarketSnapshotDto s) throws Exception {
@@ -177,17 +199,17 @@ public class LightPdfReportGenerator {
         String capFormatted = formatKzt(capital);
 
         Paragraph title = new Paragraph("БИТВА ДОХОДНОСТЕЙ: КУДА ВЛОЖИТЬ ДЕНЬГИ В КАЗАХСТАНЕ?", fontProvider.getTitleFont(13.5f, TEXT_DARK));
-        title.setSpacingAfter(3f);
+        title.setSpacingAfter(2f);
         doc.add(title);
 
-        Paragraph desc = new Paragraph("Сравнительный расчет реальной доходности на капитал " + capFormatted + " (рыночный бенчмарк)", fontProvider.getBodyFont(9f, TEXT_MUTED));
-        desc.setSpacingAfter(10f);
+        Paragraph desc = new Paragraph("Сравнительный расчет реальной доходности на капитал " + capFormatted + " (рыночный бенчмарк)", fontProvider.getBodyFont(8.5f, TEXT_MUTED));
+        desc.setSpacingAfter(8f);
         doc.add(desc);
 
         // 3 Cards
         PdfPTable battleTable = new PdfPTable(3);
         battleTable.setWidthPercentage(100);
-        battleTable.setSpacingAfter(12f);
+        battleTable.setSpacingAfter(8f);
 
         String depIncome = b != null && b.getDepositAnnualIncome() != null ? formatKzt(b.getDepositAnnualIncome()) : formatKzt(capital.multiply(new BigDecimal("0.145")));
         String reIncome = b != null && b.getRealEstateNetAnnualIncome() != null ? formatKzt(b.getRealEstateNetAnnualIncome()) : formatKzt(capital.multiply(new BigDecimal("0.081")));
@@ -237,14 +259,14 @@ public class LightPdfReportGenerator {
         doc.add(battleTable);
 
         // Detailed Comparison Matrix
-        Paragraph mTitle = new Paragraph("СРАВНИТЕЛЬНАЯ МАТРИЦА ПО ВСЕМ КЛЮЧЕВЫМ ПАРАМЕТРАМ", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        mTitle.setSpacingAfter(5f);
+        Paragraph mTitle = new Paragraph("СРАВНИТЕЛЬНАЯ МАТРИЦА ПО ВСЕМ КЛЮЧЕВЫМ ПАРАМЕТРАМ", fontProvider.getBoldFont(10f, TEXT_DARK));
+        mTitle.setSpacingAfter(4f);
         doc.add(mTitle);
 
         PdfPTable matrixTable = new PdfPTable(4);
         matrixTable.setWidthPercentage(100);
         matrixTable.setWidths(new float[]{25f, 25f, 25f, 25f});
-        matrixTable.setSpacingAfter(10f);
+        matrixTable.setSpacingAfter(8f);
 
         addMatrixHeader(matrixTable, "Параметр сравнения", "Депозит в банке", "Квартира в Алматы", "Облигации KASE");
         addMatrixRow(matrixTable, "Чистая доходность", (b != null ? b.getDepositRate() : "14.5") + "% годовых", (b != null ? b.getRealEstateNetYield() : "8.1") + "% (чистыми)", (b != null ? b.getBondYield() : "17.45") + "% (чистыми)");
@@ -256,16 +278,27 @@ public class LightPdfReportGenerator {
         addMatrixRow(matrixTable, "Гарантия сохранности", "КФГД до 10–20 млн ₸", "Риск износа здания / района", "Гарантия нацхолдингов / Минфина");
         doc.add(matrixTable);
 
+        // Real Estate Hidden Costs Panel (NEW)
+        PdfPTable reCostsTable = new PdfPTable(3);
+        reCostsTable.setWidthPercentage(100);
+        reCostsTable.setWidths(new float[]{33f, 33f, 34f});
+        reCostsTable.setSpacingAfter(8f);
+
+        addReCostCell(reCostsTable, "⚠️ Простой квартиры", "1–2 месяца в год", "Поиск новых арендаторов съедает до 8.5%–16% годового дохода.");
+        addReCostCell(reCostsTable, "🛠️ Ремонт и мебель", "~50 000 ₸ в месяц", "Амортизация сантехники, техники, мебели и косметический ремонт.");
+        addReCostCell(reCostsTable, "⚖️ Налоги и риски", "10% ИПН / ИП", "Обязательные налоги, коммуналка в период простоя и риск порчи имущества.");
+        doc.add(reCostsTable);
+
         // Summary Verdict Box
         PdfPTable vTable = new PdfPTable(1);
         vTable.setWidthPercentage(100);
         PdfPCell vCell = new PdfPCell();
         vCell.setBackgroundColor(new Color(236, 253, 245));
         vCell.setBorderColor(COLOR_SUCCESS);
-        vCell.setPadding(8f);
+        vCell.setPadding(7f);
 
-        Paragraph vTitle = new Paragraph("ИТОГОВЫЙ ВЕРДИКТ НЕЗАВИСИМОГО АНАЛИТИКА", fontProvider.getBoldFont(9.5f, COLOR_SUCCESS));
-        vTitle.setSpacingAfter(3f);
+        Paragraph vTitle = new Paragraph("ИТОГОВЫЙ ВЕРДИКТ НЕЗАВИСИМОГО АНАЛИТИКА", fontProvider.getBoldFont(9f, COLOR_SUCCESS));
+        vTitle.setSpacingAfter(2f);
         vCell.addElement(vTitle);
 
         String advVsRe = b != null && b.getBondAnnualIncome() != null && b.getRealEstateNetAnnualIncome() != null
@@ -276,7 +309,7 @@ public class LightPdfReportGenerator {
                 "При равном объеме инвестиций (" + capFormatted + ") квазигосударственные облигации Казахстана " +
                 "приносят на " + (b != null && b.getBondAdvantageOverDeposit() != null ? formatKzt(b.getBondAdvantageOverDeposit()) : "780 000 ₸") + " в год БОЛЬШЕ депозита и на " + advVsRe + " в год БОЛЬШЕ аренды квартиры в Алматы, " +
                 "не требуя ремонта, рекламы, поиска жильцов и оплаты коммунальных услуг. Ваш капитал сохраняет 100% ликвидность с ежедневным доступом к деньгам.",
-                fontProvider.getBodyFont(8f, TEXT_DARK)
+                fontProvider.getBodyFont(7.5f, TEXT_DARK)
         );
         vCell.addElement(vText);
         vTable.addCell(vCell);
@@ -285,17 +318,17 @@ public class LightPdfReportGenerator {
 
     private void renderPage3TrafficLight(Document doc, ReportMarketSnapshotDto s) throws Exception {
         Paragraph title = new Paragraph("СВЕТОФОР НАДЕЖНОСТИ: КАК ИНВЕСТИРОВАТЬ БЕЗ СТРАХА", fontProvider.getTitleFont(13.5f, TEXT_DARK));
-        title.setSpacingAfter(3f);
+        title.setSpacingAfter(2f);
         doc.add(title);
 
-        Paragraph desc = new Paragraph("Классификация ценных бумаг на казахстанской бирже по уровню инвестиционного риска и доходности", fontProvider.getBodyFont(9f, TEXT_MUTED));
-        desc.setSpacingAfter(10f);
+        Paragraph desc = new Paragraph("Классификация ценных бумаг на казахстанской бирже по уровню инвестиционного риска и доходности", fontProvider.getBodyFont(8.5f, TEXT_MUTED));
+        desc.setSpacingAfter(8f);
         doc.add(desc);
 
         PdfPTable table = new PdfPTable(2);
         table.setWidthPercentage(100);
         table.setWidths(new float[]{50f, 50f});
-        table.setSpacingAfter(12f);
+        table.setSpacingAfter(8f);
 
         // 1. Green
         PdfPCell greenCell = createTrafficCard(
@@ -343,14 +376,14 @@ public class LightPdfReportGenerator {
         doc.add(table);
 
         // Starter Portfolio Table
-        Paragraph portTitle = new Paragraph("СТАРТОВЫЙ ПОРТФЕЛЬ НАДЕЖНОСТИ ДЛЯ НАЧИНАЮЩЕГО ИНВЕСТОРА", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        portTitle.setSpacingAfter(5f);
+        Paragraph portTitle = new Paragraph("СТАРТОВЫЙ ПОРТФЕЛЬ НАДЕЖНОСТИ ДЛЯ НАЧИНАЮЩЕГО ИНВЕСТОРА", fontProvider.getBoldFont(10f, TEXT_DARK));
+        portTitle.setSpacingAfter(4f);
         doc.add(portTitle);
 
         PdfPTable portTable = new PdfPTable(6);
         portTable.setWidthPercentage(100);
         portTable.setWidths(new float[]{14f, 32f, 15f, 15f, 12f, 12f});
-        portTable.setSpacingAfter(10f);
+        portTable.setSpacingAfter(8f);
 
         addMatrixHeader(portTable, "Тикер", "Эмитент", "Доходность (YTM)", "Выплаты купона", "Срок", "Рейтинг");
         addMatrixRow(portTable, "JSBNb13", "АО «Отбасы Банк»", "17.45%", "2 раза в год", "4.7 года", "Квазигос");
@@ -363,40 +396,64 @@ public class LightPdfReportGenerator {
         // Ladder Strategy Tip
         PdfPTable ladTable = new PdfPTable(1);
         ladTable.setWidthPercentage(100);
+        ladTable.setSpacingAfter(8f);
+
         PdfPCell ladCell = new PdfPCell();
         ladCell.setBackgroundColor(new Color(248, 250, 252));
         ladCell.setBorderColor(BORDER_LIGHT);
-        ladCell.setPadding(8f);
+        ladCell.setPadding(7f);
 
-        Paragraph ladH = new Paragraph("💡 СТРАТЕГИЯ СТУПЕНЧАТОЙ «ЛЕСЕНКИ» (BOND LADDER)", fontProvider.getBoldFont(9.5f, COLOR_PRIMARY));
-        ladH.setSpacingAfter(3f);
+        Paragraph ladH = new Paragraph("💡 СТРАТЕГИЯ СТУПЕНЧАТОЙ «ЛЕСЕНКИ» (BOND LADDER)", fontProvider.getBoldFont(8.5f, COLOR_PRIMARY));
+        ladH.setSpacingAfter(2f);
         Paragraph ladB = new Paragraph(
                 "Разделите капитал на 4 равные части со сроком погашения через 1, 2, 3 и 5 лет. " +
                 "Каждый год часть облигаций будет гаситься, возвращая вам 100% вложенных денег для реинвестирования или крупных покупок. " +
                 "При этом остальная часть портфеля продолжит приносить гарантированные 17%+ годовых даже при снижении ставок Нацбанком.",
-                fontProvider.getBodyFont(8f, TEXT_MUTED)
+                fontProvider.getBodyFont(7.5f, TEXT_MUTED)
         );
         ladCell.addElement(ladH);
         ladCell.addElement(ladB);
         ladTable.addCell(ladCell);
         doc.add(ladTable);
+
+        // Compounding Effect Panel (NEW)
+        PdfPTable cmpTable = new PdfPTable(1);
+        cmpTable.setWidthPercentage(100);
+        PdfPCell cmpCell = new PdfPCell();
+        cmpCell.setBackgroundColor(new Color(236, 253, 245));
+        cmpCell.setBorderColor(new Color(167, 243, 208));
+        cmpCell.setPadding(7f);
+
+        Paragraph cmpH = new Paragraph("📈 СИЛА СЛОЖНОГО ПРОЦЕНТА (РЕИНВЕСТИРОВАНИЕ КУПОНОВ)", fontProvider.getBoldFont(8.5f, COLOR_SUCCESS));
+        cmpH.setSpacingAfter(2f);
+        Paragraph cmpB = new Paragraph(
+                "• Если вы не снимаете поступающие купоны, а сразу докупаете на них новые облигации под 17.5% годовых:\n" +
+                "  — Через 3 года: ваш капитал вырастает в 1.62 раза (10 млн ₸ превращаются в 16.2 млн ₸).\n" +
+                "  — Через 5 лет: ваш капитал удваивается и вырастает в 2.24 раза (10 млн ₸ превращаются в 22.4 млн ₸ чистыми без налогов)!\n" +
+                "• Это самый быстрый и математически надежный способ создания семейного капитала в национальной валюте.",
+                fontProvider.getBodyFont(7.5f, TEXT_DARK)
+        );
+        cmpCell.addElement(cmpH);
+        cmpCell.addElement(cmpB);
+        cmpTable.addCell(cmpCell);
+        doc.add(cmpTable);
     }
 
     private void renderPage4PaycheckAndHowTo(Document doc, ReportMarketSnapshotDto s) throws Exception {
         BigDecimal capital = s.getInvestmentAmount() != null ? s.getInvestmentAmount() : new BigDecimal("26500000");
 
         Paragraph title = new Paragraph("КАЛЕНДАРЬ КУПОННОЙ ЗАРПЛАТЫ НА 12 МЕСЯЦЕВ", fontProvider.getTitleFont(13.5f, TEXT_DARK));
-        title.setSpacingAfter(3f);
+        title.setSpacingAfter(2f);
         doc.add(title);
 
-        Paragraph desc = new Paragraph("Готовая корзина из 4-х надежных бумаг со смещенными датами выплат: живой денежный поток каждый месяц года", fontProvider.getBodyFont(9f, TEXT_MUTED));
-        desc.setSpacingAfter(10f);
+        Paragraph desc = new Paragraph("Готовая корзина из 4-х надежных бумаг со смещенными датами выплат: живой денежный поток каждый месяц года", fontProvider.getBodyFont(8.5f, TEXT_MUTED));
+        desc.setSpacingAfter(8f);
         doc.add(desc);
 
         // 12 Months Grid
         PdfPTable calTable = new PdfPTable(6);
         calTable.setWidthPercentage(100);
-        calTable.setSpacingAfter(12f);
+        calTable.setSpacingAfter(8f);
 
         List<ReportMarketSnapshotDto.CouponMonthDto> calendar = s.getPaycheck12Months();
         if (calendar == null || calendar.size() < 12) {
@@ -406,11 +463,11 @@ public class LightPdfReportGenerator {
             PdfPCell mCell = new PdfPCell();
             mCell.setBackgroundColor(new Color(241, 245, 249));
             mCell.setBorderColor(BORDER_LIGHT);
-            mCell.setPadding(6f);
+            mCell.setPadding(5f);
 
-            Paragraph mName = new Paragraph(m.getMonthName() + " (Месяц " + m.getMonthNumber() + ")", fontProvider.getBoldFont(8.5f, COLOR_PRIMARY));
-            Paragraph mCode = new Paragraph(m.getIssuerCode(), fontProvider.getBoldFont(8f, TEXT_DARK));
-            Paragraph mPay = new Paragraph("+" + formatKzt(m.getPayoutAmount()), fontProvider.getBoldFont(8.5f, COLOR_SUCCESS));
+            Paragraph mName = new Paragraph(m.getMonthName() + " (" + m.getMonthNumber() + ")", fontProvider.getBoldFont(8f, COLOR_PRIMARY));
+            Paragraph mCode = new Paragraph(m.getIssuerCode(), fontProvider.getBoldFont(7.5f, TEXT_DARK));
+            Paragraph mPay = new Paragraph("+" + formatKzt(m.getPayoutAmount()), fontProvider.getBoldFont(8f, COLOR_SUCCESS));
 
             mCell.addElement(mName);
             mCell.addElement(mCode);
@@ -420,77 +477,100 @@ public class LightPdfReportGenerator {
         doc.add(calTable);
 
         // USD Shield Section
-        Paragraph usdTitle = new Paragraph("🛡️ ДОЛЛАРОВЫЙ ЩИТ: 8.0% В USD ПРОТИВ 1.0% В БАНКЕ", fontProvider.getBoldFont(10.5f, COLOR_PRIMARY));
-        usdTitle.setSpacingAfter(4f);
+        Paragraph usdTitle = new Paragraph("🛡️ ДОЛЛАРОВЫЙ ЩИТ: 8.0% В USD ПРОТИВ 1.0% В БАНКЕ", fontProvider.getBoldFont(10f, COLOR_PRIMARY));
+        usdTitle.setSpacingAfter(3f);
         doc.add(usdTitle);
 
         PdfPTable usdTable = new PdfPTable(1);
         usdTable.setWidthPercentage(100);
-        usdTable.setSpacingAfter(12f);
+        usdTable.setSpacingAfter(8f);
 
         PdfPCell uCell = new PdfPCell();
         uCell.setBackgroundColor(new Color(239, 246, 255));
         uCell.setBorderColor(new Color(191, 219, 254));
-        uCell.setPadding(8f);
+        uCell.setPadding(7f);
 
         Paragraph uText = new Paragraph(
                 "• Валютный депозит в казахстанских банках дает максимум 1.0% годовых в долларах США (ограничение КФГД).\n" +
                 "• На бирже KASE обращаются надежные государственные и квазигосударственные еврооблигации (Минфин РК, Самрук, КМГ) с купоном от 6.5% до 8.5% годовых в USD!\n" +
                 "• Это в 7–8 раз выгоднее банковского депозита, полностью защищает от девальвации тенге и также освобождено от налога (ИПН 0%).",
-                fontProvider.getBodyFont(8f, TEXT_DARK)
+                fontProvider.getBodyFont(7.5f, TEXT_DARK)
         );
         uCell.addElement(uText);
         usdTable.addCell(uCell);
         doc.add(usdTable);
 
         // 3 Simple Steps
-        Paragraph howTitle = new Paragraph("КАК НАЧАТЬ ИНВЕСТИРОВАТЬ ЗА 3 ПРОСТЫХ ШАГА", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        howTitle.setSpacingAfter(4f);
+        Paragraph howTitle = new Paragraph("КАК НАЧАТЬ ИНВЕСТИРОВАТЬ ЗА 3 ПРОСТЫХ ШАГА", fontProvider.getBoldFont(10f, TEXT_DARK));
+        howTitle.setSpacingAfter(3f);
         doc.add(howTitle);
 
         PdfPTable stepTable = new PdfPTable(3);
         stepTable.setWidthPercentage(100);
-        stepTable.setSpacingAfter(10f);
+        stepTable.setSpacingAfter(8f);
         addStepCard(stepTable, "Шаг 1: Счет онлайн за 3 мин.", "Откройте брокерский счет прямо в приложении Halyk, Freedom Broker, BCC Trade или Jusan. Это бесплатно, по Face ID.", fontProvider);
         addStepCard(stepTable, "Шаг 2: Пополнение без %", "Пополните брокерский счет с любой карты казахстанского банка без комиссий через стандартный перевод в приложении.", fontProvider);
         addStepCard(stepTable, "Шаг 3: Покупка в 1 клик", "Найдите нужный тикер (например, JSBNb13) и нажмите «Купить». Купонные выплаты будут падать на карту автоматически!", fontProvider);
         doc.add(stepTable);
 
         // Investor FAQ Box
-        Paragraph faqTitle = new Paragraph("ЧАСТО ЗАДАВАЕМЫЕ ВОПРОСЫ НАЧИНАЮЩИХ (FAQ)", fontProvider.getBoldFont(10.5f, TEXT_DARK));
-        faqTitle.setSpacingAfter(4f);
+        Paragraph faqTitle = new Paragraph("ЧАСТО ЗАДАВАЕМЫЕ ВОПРОСЫ НАЧИНАЮЩИХ (FAQ)", fontProvider.getBoldFont(10f, TEXT_DARK));
+        faqTitle.setSpacingAfter(3f);
         doc.add(faqTitle);
 
         PdfPTable faqTable = new PdfPTable(3);
         faqTable.setWidthPercentage(100);
+        faqTable.setSpacingAfter(8f);
         addFaqCard(faqTable, "Что при дефолте эмитента?", "Квазигосударственные облигации выпущены структурами с суверенной поддержкой РК (Самрук, Отбасы, БРК). Дефолт квазигоссектора исключен без дефолта всей финансовой системы страны.");
         addFaqCard(faqTable, "Можно забрать деньги раньше?", "Да! Облигации продаются в 1 клик в рабочие часы биржи. Вы забираете всю сумму плюс 100% накопленного купона за каждый фактический день владения (НКД не сгорает).");
         addFaqCard(faqTable, "Есть ли скрытые комиссии?", "Нет скрытых комиссий. Брокер берет лишь разовую биржевую комиссию от 0.05% до 0.1% за сделку. Зачисление купонов на ваш банковский счет бесплатно.");
         doc.add(faqTable);
+
+        // Safety Checklist Box (NEW)
+        PdfPTable safeTable = new PdfPTable(1);
+        safeTable.setWidthPercentage(100);
+        PdfPCell safeCell = new PdfPCell();
+        safeCell.setBackgroundColor(new Color(248, 250, 252));
+        safeCell.setBorderColor(BORDER_LIGHT);
+        safeCell.setPadding(7f);
+
+        Paragraph safeH = new Paragraph("🛡️ ЗОЛОТАЯ ПАМЯТКА БЕЗОПАСНОСТИ ДЛЯ НАЧИНАЮЩЕГО ИНВЕСТОРА", fontProvider.getBoldFont(8.5f, COLOR_PRIMARY));
+        safeH.setSpacingAfter(2f);
+        Paragraph safeB = new Paragraph(
+                "1. Никогда не инвестируйте кредитные деньги или последние сбережения — начните со свободных накоплений.\n" +
+                "2. Не покупайте акции или бонды третьего эшелона без маркетмейкера только из-за обещания сверхвысокого процента.\n" +
+                "3. Распределяйте средства минимум по 3–4 разным выпускам (Отбасы, КФУ, Самрук, БРК) для идеальной диверсификации.\n" +
+                "4. Проверяйте наличие лицензии АРРФР у вашего брокера (Halyk Finance, Freedom, BCC Invest, Jusan Invest имеют государственную лицензию).",
+                fontProvider.getBodyFont(7.2f, TEXT_MUTED)
+        );
+        safeCell.addElement(safeH);
+        safeCell.addElement(safeB);
+        safeTable.addCell(safeCell);
+        doc.add(safeTable);
     }
 
     private void addTipCard(PdfPTable table, String title, String text, Color accentColor) {
         PdfPCell c = new PdfPCell();
         c.setBackgroundColor(CARD_BG);
         c.setBorderColor(BORDER_LIGHT);
-        c.setPadding(7f);
+        c.setPadding(6f);
 
-        Paragraph t = new Paragraph(title, fontProvider.getBoldFont(8.5f, accentColor));
-        t.setSpacingAfter(3f);
+        Paragraph t = new Paragraph(title, fontProvider.getBoldFont(8f, accentColor));
+        t.setSpacingAfter(2f);
         c.addElement(t);
 
-        Paragraph b = new Paragraph(text, fontProvider.getBodyFont(7.5f, TEXT_MUTED));
+        Paragraph b = new Paragraph(text, fontProvider.getBodyFont(7.2f, TEXT_MUTED));
         c.addElement(b);
         table.addCell(c);
     }
 
     private void addSimpleRow(PdfPTable table, String title, String val) {
-        PdfPCell c1 = new PdfPCell(new Phrase(title, fontProvider.getBodyFont(8.5f, TEXT_MUTED)));
+        PdfPCell c1 = new PdfPCell(new Phrase(title, fontProvider.getBodyFont(8f, TEXT_MUTED)));
         c1.setBackgroundColor(CARD_BG);
         c1.setBorderColor(BORDER_LIGHT);
         c1.setPadding(4f);
 
-        PdfPCell c2 = new PdfPCell(new Phrase(val, fontProvider.getBoldFont(9f, COLOR_PRIMARY)));
+        PdfPCell c2 = new PdfPCell(new Phrase(val, fontProvider.getBoldFont(8.5f, COLOR_PRIMARY)));
         c2.setBackgroundColor(CARD_BG);
         c2.setBorderColor(BORDER_LIGHT);
         c2.setPadding(4f);
@@ -505,28 +585,28 @@ public class LightPdfReportGenerator {
         c.setBackgroundColor(CARD_BG);
         c.setBorderColor(borderColor);
         c.setBorderWidth(borderColor.equals(COLOR_SUCCESS) ? 1.5f : 1.0f);
-        c.setPadding(7f);
+        c.setPadding(6f);
 
-        Paragraph pName = new Paragraph(name, fontProvider.getBoldFont(8.5f, TEXT_DARK));
-        Paragraph pRate = new Paragraph(rate, fontProvider.getTitleFont(13f, rateColor));
-        Paragraph pInc = new Paragraph(income, fontProvider.getBoldFont(9f, rateColor));
-        pInc.setSpacingAfter(4f);
+        Paragraph pName = new Paragraph(name, fontProvider.getBoldFont(8f, TEXT_DARK));
+        Paragraph pRate = new Paragraph(rate, fontProvider.getTitleFont(12f, rateColor));
+        Paragraph pInc = new Paragraph(income, fontProvider.getBoldFont(8.5f, rateColor));
+        pInc.setSpacingAfter(3f);
 
         c.addElement(pName);
         c.addElement(pRate);
         c.addElement(pInc);
 
-        Paragraph pts = new Paragraph(points, fontProvider.getBodyFont(7.2f, TEXT_MUTED));
+        Paragraph pts = new Paragraph(points, fontProvider.getBodyFont(7f, TEXT_MUTED));
         c.addElement(pts);
         return c;
     }
 
     private void addMatrixHeader(PdfPTable table, String... headers) {
         for (String h : headers) {
-            PdfPCell c = new PdfPCell(new Phrase(h, fontProvider.getBoldFont(8f, TEXT_DARK)));
+            PdfPCell c = new PdfPCell(new Phrase(h, fontProvider.getBoldFont(7.5f, TEXT_DARK)));
             c.setBackgroundColor(TABLE_HEADER_BG);
             c.setBorderColor(BORDER_LIGHT);
-            c.setPadding(4f);
+            c.setPadding(3.5f);
             c.setHorizontalAlignment(Element.ALIGN_CENTER);
             table.addCell(c);
         }
@@ -534,25 +614,42 @@ public class LightPdfReportGenerator {
 
     private void addMatrixRow(PdfPTable table, String... values) {
         for (int i = 0; i < values.length; i++) {
-            PdfPCell c = new PdfPCell(new Phrase(values[i] != null ? values[i] : "", fontProvider.getBodyFont(7.5f, i == 0 ? TEXT_DARK : TEXT_MUTED)));
+            PdfPCell c = new PdfPCell(new Phrase(values[i] != null ? values[i] : "", fontProvider.getBodyFont(7.2f, i == 0 ? TEXT_DARK : TEXT_MUTED)));
             c.setBackgroundColor(CARD_BG);
             c.setBorderColor(BORDER_LIGHT);
-            c.setPadding(3.5f);
+            c.setPadding(3f);
             if (i > 0) c.setHorizontalAlignment(Element.ALIGN_CENTER);
             table.addCell(c);
         }
+    }
+
+    private void addReCostCell(PdfPTable table, String title, String val, String desc) {
+        PdfPCell c = new PdfPCell();
+        c.setBackgroundColor(new Color(254, 242, 242));
+        c.setBorderColor(new Color(254, 202, 202));
+        c.setPadding(5f);
+
+        Paragraph t = new Paragraph(title, fontProvider.getBoldFont(7.5f, COLOR_DANGER));
+        Paragraph v = new Paragraph(val, fontProvider.getBoldFont(8f, TEXT_DARK));
+        v.setSpacingAfter(2f);
+        Paragraph d = new Paragraph(desc, fontProvider.getBodyFont(6.8f, TEXT_MUTED));
+
+        c.addElement(t);
+        c.addElement(v);
+        c.addElement(d);
+        table.addCell(c);
     }
 
     private PdfPCell createTrafficCard(String title, String subtitle, String content, Color accent) {
         PdfPCell c = new PdfPCell();
         c.setBackgroundColor(CARD_BG);
         c.setBorderColor(BORDER_LIGHT);
-        c.setPadding(7f);
+        c.setPadding(6f);
 
-        Paragraph t = new Paragraph(title, fontProvider.getBoldFont(8.5f, accent));
-        Paragraph sub = new Paragraph(subtitle, fontProvider.getBoldFont(7.5f, TEXT_DARK));
-        sub.setSpacingAfter(3f);
-        Paragraph body = new Paragraph(content, fontProvider.getBodyFont(7.2f, TEXT_MUTED));
+        Paragraph t = new Paragraph(title, fontProvider.getBoldFont(8f, accent));
+        Paragraph sub = new Paragraph(subtitle, fontProvider.getBoldFont(7f, TEXT_DARK));
+        sub.setSpacingAfter(2f);
+        Paragraph body = new Paragraph(content, fontProvider.getBodyFont(7f, TEXT_MUTED));
 
         c.addElement(t);
         c.addElement(sub);
@@ -564,11 +661,11 @@ public class LightPdfReportGenerator {
         PdfPCell c = new PdfPCell();
         c.setBackgroundColor(CARD_BG);
         c.setBorderColor(BORDER_LIGHT);
-        c.setPadding(7f);
+        c.setPadding(6f);
 
-        Paragraph t = new Paragraph(title, fp.getBoldFont(8.5f, COLOR_PRIMARY));
+        Paragraph t = new Paragraph(title, fp.getBoldFont(8f, COLOR_PRIMARY));
         t.setSpacingAfter(2f);
-        Paragraph d = new Paragraph(desc, fp.getBodyFont(7.5f, TEXT_MUTED));
+        Paragraph d = new Paragraph(desc, fp.getBodyFont(7.2f, TEXT_MUTED));
 
         c.addElement(t);
         c.addElement(d);
@@ -579,11 +676,11 @@ public class LightPdfReportGenerator {
         PdfPCell c = new PdfPCell();
         c.setBackgroundColor(CARD_BG);
         c.setBorderColor(BORDER_LIGHT);
-        c.setPadding(6f);
+        c.setPadding(5f);
 
-        Paragraph q = new Paragraph(question, fontProvider.getBoldFont(8f, TEXT_DARK));
+        Paragraph q = new Paragraph(question, fontProvider.getBoldFont(7.5f, TEXT_DARK));
         q.setSpacingAfter(2f);
-        Paragraph a = new Paragraph(answer, fontProvider.getBodyFont(7.2f, TEXT_MUTED));
+        Paragraph a = new Paragraph(answer, fontProvider.getBodyFont(6.8f, TEXT_MUTED));
 
         c.addElement(q);
         c.addElement(a);
