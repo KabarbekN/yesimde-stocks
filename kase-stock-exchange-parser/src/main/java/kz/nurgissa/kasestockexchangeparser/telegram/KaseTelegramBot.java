@@ -260,7 +260,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             sendGlobalStats(chatId);
         } else if (text.equals("🧮 Калькулятор") || text.startsWith("/calc")) {
             handleCalcCommand(chatId, text);
-        } else if (text.equals("📑 Отчеты (PDF/Excel)") || text.equals("📑 Аналитические отчеты") || text.equals("📑 Отчеты") || text.startsWith("/report") || text.startsWith("/export")) {
+        } else if (text.equals("📑 Отчеты (PDF/Excel)") || text.equals("📑 Аналитические отчеты") || text.equals("📑 Отчеты")
+                || text.startsWith("/report") || text.startsWith("/reports") || text.startsWith("/export")
+                || text.equalsIgnoreCase("отчеты") || text.equalsIgnoreCase("отчет") || text.equalsIgnoreCase("report")) {
             handleReportCommand(chatId, text);
         } else if (text.startsWith("/bond")) {
             handleBondCommand(chatId, text);
@@ -1727,7 +1729,24 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             }
             telegramClient.execute(smb.build());
         } catch (Exception ex) {
-            log.error("Failed to send Telegram message to chatId {}: {}", chatId, ex.getMessage());
+            log.warn("HTML send failed for chatId {}, retrying plain text: {}", chatId, ex.getMessage());
+            try {
+                String plainText = text.replaceAll("<[^>]*>", "")
+                        .replace("&amp;", "&")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">")
+                        .replace("&quot;", "\"");
+                SendMessage.SendMessageBuilder fallbackBuilder = SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text(plainText)
+                        .disableWebPagePreview(true);
+                if (keyboard != null) {
+                    fallbackBuilder.replyMarkup(keyboard);
+                }
+                telegramClient.execute(fallbackBuilder.build());
+            } catch (Exception ex2) {
+                log.error("Failed to send fallback plain text message to chatId {}: {}", chatId, ex2.getMessage());
+            }
         }
     }
 
@@ -2575,8 +2594,23 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     .build();
             telegramClient.execute(sendDocument);
         } catch (Exception ex) {
-            log.error("Failed to send Telegram document {} to chatId {}: {}", fileName, chatId, ex.getMessage(), ex);
-            sendMessage(chatId, "❌ Ошибка при отправке файла <b>" + escapeHtml(fileName) + "</b>. Пожалуйста, попробуйте позже.", null);
+            log.warn("HTML caption send failed for file {}, retrying plain text: {}", fileName, ex.getMessage());
+            try {
+                InputFile retryFile = new InputFile(new ByteArrayInputStream(fileBytes), fileName);
+                String plainCaption = caption.replaceAll("<[^>]*>", "")
+                        .replace("&amp;", "&")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">");
+                SendDocument retryDoc = SendDocument.builder()
+                        .chatId(chatId.toString())
+                        .document(retryFile)
+                        .caption(plainCaption)
+                        .build();
+                telegramClient.execute(retryDoc);
+            } catch (Exception ex2) {
+                log.error("Failed to send Telegram document {} to chatId {}: {}", fileName, chatId, ex2.getMessage(), ex2);
+                sendMessage(chatId, "❌ Ошибка при отправке файла <b>" + escapeHtml(fileName) + "</b>. Пожалуйста, попробуйте позже.", null);
+            }
         }
     }
 
@@ -2635,7 +2669,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                 <i>Базовый капитал для моделирования: <b>%s</b></i>
                 <i>Для изменения капитала введите:</i> <code>/report 5000000</code>
-                """, capStr);
+                """, escapeHtml(capStr));
 
         InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
                 .keyboardRow(new InlineKeyboardRow(

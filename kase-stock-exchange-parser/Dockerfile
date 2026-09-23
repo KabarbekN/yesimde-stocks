@@ -16,6 +16,9 @@ RUN ./mvnw clean package -DskipTests -B
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
+# Install fontconfig and freetype for headless PDF & chart rendering
+RUN apk add --no-cache fontconfig freetype ttf-dejavu
+
 # Run as non-privileged user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
