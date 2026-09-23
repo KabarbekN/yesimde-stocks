@@ -31,10 +31,18 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
 
     @Override
     public Mono<ReportMarketSnapshotDto> buildMarketSnapshot(BigDecimal customCapital) {
-        Mono<Map<String, BigDecimal>> benchmarksMono = benchmarkService.getBenchmarksMap();
-        Mono<List<SecurityMarketTurnoverEntity>> cumulativeStatsMono = statsService.getCumulativeStats().collectList();
-        Mono<List<SecurityMarketTurnoverEntity>> monthlyStatsMono = statsService.getMonthlyStats().collectList();
-        Mono<List<ArbitrageItemDto>> arbitrageMono = aixService.getArbitrageOpportunities().defaultIfEmpty(new ArrayList<>());
+        Mono<Map<String, BigDecimal>> benchmarksMono = benchmarkService.getBenchmarksMap()
+                .onErrorReturn(Map.of())
+                .defaultIfEmpty(Map.of());
+        Mono<List<SecurityMarketTurnoverEntity>> cumulativeStatsMono = statsService.getCumulativeStats().collectList()
+                .onErrorReturn(new ArrayList<>())
+                .defaultIfEmpty(new ArrayList<>());
+        Mono<List<SecurityMarketTurnoverEntity>> monthlyStatsMono = statsService.getMonthlyStats().collectList()
+                .onErrorReturn(new ArrayList<>())
+                .defaultIfEmpty(new ArrayList<>());
+        Mono<List<ArbitrageItemDto>> arbitrageMono = aixService.getArbitrageOpportunities()
+                .onErrorReturn(new ArrayList<>())
+                .defaultIfEmpty(new ArrayList<>());
         Mono<List<ReportMarketSnapshotDto.BondReportItemDto>> bondsMono = fetchAllLiveBonds();
         Mono<List<ReportMarketSnapshotDto.StockReportItemDto>> liveStocksMono = fetchLiveStocks();
 
@@ -226,12 +234,21 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
     private Mono<List<ReportMarketSnapshotDto.StockReportItemDto>> fetchLiveStocks() {
         String sql = """
             SELECT 
-                s.code, s.org_name_ru, s.price, s.prev_close_price, s.currency_type, s.sec_type,
-                t.change_val, t.trend, t.high, t.low, t.volkzt
+                s.code, 
+                COALESCE(s.org_short_name_ru, s.org_name_ru, s.code) AS org_name_ru, 
+                s.price, 
+                s.close_price, 
+                COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') AS currency_type, 
+                s.sec_type,
+                s.trand AS change_val, 
+                s.trand_percent, 
+                s.volkzt, 
+                s.dealcnt, 
+                s.capit
             FROM security_instrument s
-            LEFT JOIN ticker t ON UPPER(s.code) = UPPER(t.ticker)
-            WHERE s.sec_type IN ('share', 'stock') OR s.code ~ '^[A-Z]{4}$'
-            ORDER BY COALESCE(s.volkzt, 0) DESC
+            LEFT JOIN ticker t ON s.id = t.security_instrument_id
+            WHERE s.sec_type IN ('share', 'stock') OR (s.sec_type IS NULL AND s.code ~ '^[A-Z]{4}$')
+            ORDER BY COALESCE(s.volkzt, 0) DESC NULLS LAST
             LIMIT 100
         """;
 
@@ -240,15 +257,21 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                     String code = row.get("code", String.class);
                     String name = row.get("org_name_ru", String.class);
                     BigDecimal price = row.get("price", BigDecimal.class);
-                    BigDecimal prevClose = row.get("prev_close_price", BigDecimal.class);
+                    BigDecimal closePrice = row.get("close_price", BigDecimal.class);
                     String currency = row.get("currency_type", String.class);
                     BigDecimal change = row.get("change_val", BigDecimal.class);
+                    BigDecimal trandPct = row.get("trand_percent", BigDecimal.class);
+                    BigDecimal volKzt = row.get("volkzt", BigDecimal.class);
+                    Integer dealCount = row.get("dealcnt", Integer.class);
+                    BigDecimal marketCap = row.get("capit", BigDecimal.class);
 
                     BigDecimal dayChangePct = BigDecimal.ZERO;
-                    if (change != null) {
-                        dayChangePct = change;
-                    } else if (price != null && prevClose != null && prevClose.compareTo(BigDecimal.ZERO) > 0) {
-                        dayChangePct = price.subtract(prevClose).multiply(BigDecimal.valueOf(100)).divide(prevClose, 2, RoundingMode.HALF_UP);
+                    if (trandPct != null) {
+                        dayChangePct = trandPct;
+                    } else if (change != null && closePrice != null && closePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        dayChangePct = change.multiply(BigDecimal.valueOf(100)).divide(closePrice, 2, RoundingMode.HALF_UP);
+                    } else if (price != null && closePrice != null && closePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        dayChangePct = price.subtract(closePrice).multiply(BigDecimal.valueOf(100)).divide(closePrice, 2, RoundingMode.HALF_UP);
                     }
 
                     return ReportMarketSnapshotDto.StockReportItemDto.builder()
@@ -256,22 +279,31 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                             .name(name != null ? name : "")
                             .sector("акции")
                             .exchange("KASE")
-                            .currentPrice(price != null ? price : BigDecimal.ZERO)
+                            .currentPrice(price != null ? price : (closePrice != null ? closePrice : BigDecimal.ZERO))
                             .currency(currency != null && !currency.isBlank() ? currency : "KZT")
                             .dayChangePct(dayChangePct)
                             .trend(dayChangePct.compareTo(BigDecimal.ZERO) >= 0 ? "Бычий 🐂" : "Медвежий 🐻")
+                            .monthlyVolumeKzt(volKzt != null ? volKzt : BigDecimal.ZERO)
+                            .monthlyDeals(dealCount != null ? dealCount.longValue() : 0L)
                             .build();
                 })
                 .all()
                 .collectList()
+                .onErrorResume(e -> {
+                    log.error("Failed to fetch live stocks for report: {}", e.getMessage(), e);
+                    return Mono.just(new ArrayList<ReportMarketSnapshotDto.StockReportItemDto>());
+                })
                 .defaultIfEmpty(new ArrayList<>());
     }
 
     private Mono<List<ReportMarketSnapshotDto.BondReportItemDto>> fetchAllLiveBonds() {
         String sql = """
             SELECT 
-                s.code, s.org_name_ru, s.org_short_name_ru, s.sec_type, s.currency_type,
-                s.price, s.volume, s.volume_number, s.finish_date, s.dtm,
+                s.code, s.org_name_ru, s.org_short_name_ru, s.sec_type,
+                COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') AS currency_type,
+                s.price, s.volume, s.volume_number, 
+                COALESCE(t.finish_date, s.repayment_start_date) AS finish_date, 
+                s.dtm,
                 COALESCE(
                     CASE WHEN s.dohod > 0 AND s.dohod < 50 THEN s.dohod END,
                     CASE WHEN s.dohod_total > 0 AND s.dohod_total < 50 THEN s.dohod_total END,
@@ -279,14 +311,13 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                          THEN GREATEST(COALESCE(t.cupon, 0), COALESCE(t.cupon2, 0)) END,
                     15.0
                 ) AS effective_yield,
-                GREATEST(COALESCE(t.cupon, 0), COALESCE(t.cupon2, 0)) AS coupon_rate,
-                t.period, t.cupon_type
+                GREATEST(COALESCE(t.cupon, 0), COALESCE(t.cupon2, 0)) AS coupon_rate
             FROM security_instrument s
-            LEFT JOIN ticker t ON UPPER(s.code) = UPPER(t.ticker)
+            LEFT JOIN ticker t ON s.id = t.security_instrument_id
             WHERE (s.sec_type IN ('bond', 'gsec', 'ifo', 'mfo', 'repo') OR s.code ~ '[a-z][0-9]+$')
-              AND (s.finish_date IS NULL OR s.finish_date >= CURRENT_DATE)
+              AND (COALESCE(t.finish_date, s.repayment_start_date) IS NULL OR COALESCE(t.finish_date, s.repayment_start_date) >= CURRENT_DATE)
               AND (s.dtm IS NULL OR s.dtm > 0)
-            ORDER BY effective_yield DESC
+            ORDER BY effective_yield DESC NULLS LAST
             LIMIT 1500
         """;
 
@@ -365,6 +396,10 @@ public class DefaultReportDataAggregatorService implements ReportDataAggregatorS
                 })
                 .all()
                 .collectList()
+                .onErrorResume(e -> {
+                    log.error("Failed to fetch live bonds for report: {}", e.getMessage(), e);
+                    return Mono.just(new ArrayList<ReportMarketSnapshotDto.BondReportItemDto>());
+                })
                 .defaultIfEmpty(new ArrayList<>());
     }
 
