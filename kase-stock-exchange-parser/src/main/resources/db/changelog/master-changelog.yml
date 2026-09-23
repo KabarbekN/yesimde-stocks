@@ -27,6 +27,9 @@ databaseChangeLog:
   - include:
       file: 09-add-performance-indexes.sql
       relativeToChangelogFile: true
+  - include:
+      file: 10-create-market-reports-tables.sql
+      relativeToChangelogFile: true
 
 
 

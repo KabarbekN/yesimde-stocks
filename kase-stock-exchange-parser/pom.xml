@@ -28,6 +28,8 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -93,6 +95,27 @@
 			<groupId>org.telegram</groupId>
 			<artifactId>telegrambots-client</artifactId>
 			<version>7.10.0</version>
+		</dependency>
+
+		<!-- Excel Processing: Apache POI for .xlsx reports -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.3.0</version>
+		</dependency>
+
+		<!-- PDF Generation: OpenPDF with TrueType Unicode support -->
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
+			<version>2.0.3</version>
+		</dependency>
+
+		<!-- Chart Engine: JFreeChart for server-side PDF chart rendering -->
+		<dependency>
+			<groupId>org.jfree</groupId>
+			<artifactId>jfreechart</artifactId>
+			<version>1.5.5</version>
 		</dependency>
 	</dependencies>
 

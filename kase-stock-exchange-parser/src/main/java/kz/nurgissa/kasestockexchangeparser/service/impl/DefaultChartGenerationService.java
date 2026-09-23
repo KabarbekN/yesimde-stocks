@@ -1,0 +1,251 @@
+package kz.nurgissa.kasestockexchangeparser.service.impl;
+
+import kz.nurgissa.kasestockexchangeparser.model.dtos.ReportMarketSnapshotDto;
+import kz.nurgissa.kasestockexchangeparser.service.ChartGenerationService;
+import lombok.extern.slf4j.Slf4j;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.CategoryAxis;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.plot.CategoryPlot;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.renderer.category.BarRenderer;
+import org.jfree.chart.renderer.category.StandardBarPainter;
+import org.jfree.data.category.DefaultCategoryDataset;
+import org.jfree.data.general.DefaultPieDataset;
+import org.springframework.stereotype.Service;
+
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.geom.Arc2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+
+@Slf4j
+@Service
+public class DefaultChartGenerationService implements ChartGenerationService {
+
+    @Override
+    public byte[] generateTopEquitiesBarChart(List<ReportMarketSnapshotDto.StockReportItemDto> topStocks, boolean darkMode, int width, int height) {
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+
+        if (topStocks != null) {
+            int count = Math.min(topStocks.size(), 8);
+            for (int i = 0; i < count; i++) {
+                ReportMarketSnapshotDto.StockReportItemDto s = topStocks.get(i);
+                BigDecimal volBln = s.getCumulativeVolumeKzt() != null
+                        ? s.getCumulativeVolumeKzt().divide(BigDecimal.valueOf(1_000_000_000L), 1, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                dataset.addValue(volBln.doubleValue(), "Оборот (млрд ₸)", s.getCode());
+            }
+        }
+
+        JFreeChart chart = ChartFactory.createBarChart(
+                "Топ-8 акций по биржевому обороту (млрд ₸, 2022–2026)",
+                "Тикер",
+                "Млрд тенге",
+                dataset,
+                PlotOrientation.VERTICAL,
+                false,
+                false,
+                false
+        );
+
+        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
+        Color fgColor = darkMode ? new Color(226, 232, 240) : new Color(30, 41, 59);
+        Color barColor = darkMode ? new Color(14, 165, 233) : new Color(37, 99, 235);
+
+        chart.setBackgroundPaint(bgColor);
+        chart.getTitle().setPaint(fgColor);
+        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+
+        CategoryPlot plot = chart.getCategoryPlot();
+        plot.setBackgroundPaint(darkMode ? new Color(24, 33, 56) : new Color(248, 250, 252));
+        plot.setOutlinePaint(null);
+        plot.setRangeGridlinePaint(darkMode ? new Color(51, 65, 85) : new Color(226, 232, 240));
+
+        CategoryAxis domainAxis = plot.getDomainAxis();
+        domainAxis.setTickLabelPaint(fgColor);
+        domainAxis.setLabelPaint(fgColor);
+        domainAxis.setTickLabelFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+
+        NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+        rangeAxis.setTickLabelPaint(fgColor);
+        rangeAxis.setLabelPaint(fgColor);
+        rangeAxis.setTickLabelFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+
+        BarRenderer renderer = (BarRenderer) plot.getRenderer();
+        renderer.setBarPainter(new StandardBarPainter());
+        renderer.setSeriesPaint(0, barColor);
+        renderer.setShadowVisible(false);
+
+        return renderChartToPng(chart, width, height);
+    }
+
+    @Override
+    public byte[] generateYieldCurveChart(boolean darkMode, int width, int height) {
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        dataset.addValue(16.9, "ГЦБ Минфина (Суверенная)", "3 мес.");
+        dataset.addValue(16.5, "ГЦБ Минфина (Суверенная)", "6 мес.");
+        dataset.addValue(15.8, "ГЦБ Минфина (Суверенная)", "1 год");
+        dataset.addValue(15.2, "ГЦБ Минфина (Суверенная)", "2 года");
+        dataset.addValue(14.8, "ГЦБ Минфина (Суверенная)", "3 года");
+        dataset.addValue(14.5, "ГЦБ Минфина (Суверенная)", "5 лет");
+        dataset.addValue(14.2, "ГЦБ Минфина (Суверенная)", "10 лет");
+
+        dataset.addValue(17.8, "Квазигоссектор (Отбасы/БРК)", "3 мес.");
+        dataset.addValue(17.5, "Квазигоссектор (Отбасы/БРК)", "1 год");
+        dataset.addValue(17.45, "Квазигоссектор (Отбасы/БРК)", "3 года");
+        dataset.addValue(17.0, "Квазигоссектор (Отбасы/БРК)", "5 лет");
+
+        JFreeChart chart = ChartFactory.createLineChart(
+                "Суверенная кривая доходности РК vs Квазигоссектор (% годовых)",
+                "Срок обращения (дюрация)",
+                "Доходность (% годовых)",
+                dataset,
+                PlotOrientation.VERTICAL,
+                true,
+                false,
+                false
+        );
+
+        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
+        Color fgColor = darkMode ? new Color(226, 232, 240) : new Color(30, 41, 59);
+
+        chart.setBackgroundPaint(bgColor);
+        chart.getTitle().setPaint(fgColor);
+        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+        if (chart.getLegend() != null) {
+            chart.getLegend().setBackgroundPaint(bgColor);
+            chart.getLegend().setItemPaint(fgColor);
+            chart.getLegend().setItemFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+        }
+
+        CategoryPlot plot = chart.getCategoryPlot();
+        plot.setBackgroundPaint(darkMode ? new Color(24, 33, 56) : new Color(248, 250, 252));
+        plot.setOutlinePaint(null);
+        plot.setRangeGridlinePaint(darkMode ? new Color(51, 65, 85) : new Color(226, 232, 240));
+
+        plot.getDomainAxis().setTickLabelPaint(fgColor);
+        plot.getDomainAxis().setLabelPaint(fgColor);
+        plot.getRangeAxis().setTickLabelPaint(fgColor);
+        plot.getRangeAxis().setLabelPaint(fgColor);
+
+        plot.getRenderer().setSeriesPaint(0, new Color(59, 130, 246)); // Blue
+        plot.getRenderer().setSeriesPaint(1, new Color(16, 185, 129)); // Emerald
+
+        return renderChartToPng(chart, width, height);
+    }
+
+    @Override
+    public byte[] generateSectorPieChart(List<ReportMarketSnapshotDto.StockReportItemDto> stocks, boolean darkMode, int width, int height) {
+        DefaultPieDataset dataset = new DefaultPieDataset();
+        dataset.setValue("Нефть и Газ (KMGZ)", 414.0);
+        dataset.setValue("Банки & FinTech (HSBK, CCBN, KSPI)", 324.6);
+        dataset.setValue("Телекоммуникации (KZTK, KCEL)", 246.3);
+        dataset.setValue("Авиация (AIRA)", 98.9);
+        dataset.setValue("Атомная отрасль (KZAP)", 83.0);
+        dataset.setValue("KASE Global (BITO, NVDA, INTC)", 162.4);
+
+        JFreeChart chart = ChartFactory.createPieChart(
+                "Отраслевая структура биржевого капитала (млрд ₸)",
+                dataset,
+                true,
+                false,
+                false
+        );
+
+        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
+        Color fgColor = darkMode ? new Color(226, 232, 240) : new Color(30, 41, 59);
+
+        chart.setBackgroundPaint(bgColor);
+        chart.getTitle().setPaint(fgColor);
+        chart.getTitle().setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+        if (chart.getLegend() != null) {
+            chart.getLegend().setBackgroundPaint(bgColor);
+            chart.getLegend().setItemPaint(fgColor);
+            chart.getLegend().setItemFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+        }
+
+        org.jfree.chart.plot.PiePlot plot = (org.jfree.chart.plot.PiePlot) chart.getPlot();
+        plot.setBackgroundPaint(bgColor);
+        plot.setOutlinePaint(null);
+        plot.setLabelBackgroundPaint(bgColor);
+        plot.setLabelPaint(fgColor);
+        plot.setLabelFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+
+        plot.setSectionPaint("Нефть и Газ (KMGZ)", new Color(2, 132, 199));
+        plot.setSectionPaint("Банки & FinTech (HSBK, CCBN, KSPI)", new Color(16, 185, 129));
+        plot.setSectionPaint("Телекоммуникации (KZTK, KCEL)", new Color(139, 92, 246));
+        plot.setSectionPaint("Авиация (AIRA)", new Color(14, 165, 233));
+        plot.setSectionPaint("Атомная отрасль (KZAP)", new Color(245, 158, 11));
+        plot.setSectionPaint("KASE Global (BITO, NVDA, INTC)", new Color(236, 72, 153));
+
+        return renderChartToPng(chart, width, height);
+    }
+
+    @Override
+    public byte[] generateFearAndGreedDial(int score, String label, boolean darkMode, int width, int height) {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = image.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        Color bgColor = darkMode ? new Color(15, 23, 42) : Color.WHITE;
+        g2.setColor(bgColor);
+        g2.fillRect(0, 0, width, height);
+
+        // Draw Gauge Arc
+        int arcX = 30;
+        int arcY = 20;
+        int arcW = width - 60;
+        int arcH = (height - 40) * 2;
+
+        g2.setStroke(new BasicStroke(16, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.setColor(darkMode ? new Color(30, 41, 59) : new Color(226, 232, 240));
+        g2.draw(new Arc2D.Double(arcX, arcY, arcW, arcH, 0, 180, Arc2D.OPEN));
+
+        // Active Arc
+        double angle = 180.0 * (score / 100.0);
+        g2.setColor(score > 55 ? new Color(16, 185, 129) : (score < 45 ? new Color(239, 68, 68) : new Color(245, 158, 11)));
+        g2.draw(new Arc2D.Double(arcX, arcY, arcW, arcH, 180 - angle, angle, Arc2D.OPEN));
+
+        // Text
+        g2.setColor(darkMode ? Color.WHITE : new Color(15, 23, 42));
+        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 28));
+        String scoreStr = String.valueOf(score);
+        FontMetrics fm = g2.getFontMetrics();
+        int scoreWidth = fm.stringWidth(scoreStr);
+        g2.drawString(scoreStr, (width - scoreWidth) / 2, height / 2 + 15);
+
+        g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        g2.setColor(score > 55 ? new Color(16, 185, 129) : (score < 45 ? new Color(239, 68, 68) : new Color(245, 158, 11)));
+        fm = g2.getFontMetrics();
+        int labelWidth = fm.stringWidth(label);
+        g2.drawString(label, (width - labelWidth) / 2, height / 2 + 35);
+
+        g2.dispose();
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            ImageIO.write(image, "PNG", baos);
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Error writing dial image: {}", e.getMessage());
+            return new byte[0];
+        }
+    }
+
+    private byte[] renderChartToPng(JFreeChart chart, int width, int height) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            BufferedImage image = chart.createBufferedImage(width, height);
+            ImageIO.write(image, "PNG", baos);
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Failed to render chart to PNG: {}", e.getMessage(), e);
+            return new byte[0];
+        }
+    }
+}

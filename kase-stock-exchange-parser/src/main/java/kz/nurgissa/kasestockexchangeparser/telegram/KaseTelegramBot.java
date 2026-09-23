@@ -43,8 +43,14 @@ import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessagecontent.InputTextMessageContent;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResult;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResultArticle;
+import kz.nurgissa.kasestockexchangeparser.service.ReportExportService;
+import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import reactor.core.publisher.Mono;
+
+import java.io.ByteArrayInputStream;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -70,6 +76,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private final TechnicalAnalysisService technicalAnalysisService;
     private final PriceAlertTargetRepository priceAlertTargetRepository;
     private final DatabaseClient databaseClient;
+    private final ReportExportService reportExportService;
 
     public KaseTelegramBot(
             @Value("${telegram.bot.token}") String botToken,
@@ -78,7 +85,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             kz.nurgissa.kasestockexchangeparser.service.AixService aixService,
             TechnicalAnalysisService technicalAnalysisService,
             PriceAlertTargetRepository priceAlertTargetRepository,
-            DatabaseClient databaseClient
+            DatabaseClient databaseClient,
+            ReportExportService reportExportService
     ) {
         this.botToken = botToken;
         this.telegramClient = new OkHttpTelegramClient(botToken);
@@ -88,6 +96,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         this.technicalAnalysisService = technicalAnalysisService;
         this.priceAlertTargetRepository = priceAlertTargetRepository;
         this.databaseClient = databaseClient;
+        this.reportExportService = reportExportService;
         log.info("KASE & AIX Telegram Bot initialized successfully.");
     }
 
@@ -106,6 +115,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         try {
             List<BotCommand> commands = List.of(
                     BotCommand.builder().command("pulse").description("⚡ Пульс рынка KASE и AIX").build(),
+                    BotCommand.builder().command("report").description("📑 Аналитический отчет (PDF / Excel)").build(),
                     BotCommand.builder().command("ta").description("📊 Теханализ и RSI (напр. /ta KSPI)").build(),
                     BotCommand.builder().command("alert").description("🔔 Поставить лимит-алерт цены").build(),
                     BotCommand.builder().command("my_alerts").description("📋 Мои активные алерты").build(),
@@ -250,6 +260,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             sendGlobalStats(chatId);
         } else if (text.equals("🧮 Калькулятор") || text.startsWith("/calc")) {
             handleCalcCommand(chatId, text);
+        } else if (text.equals("📑 Отчеты (PDF/Excel)") || text.equals("📑 Аналитические отчеты") || text.equals("📑 Отчеты") || text.startsWith("/report") || text.startsWith("/export")) {
+            handleReportCommand(chatId, text);
         } else if (text.startsWith("/bond")) {
             handleBondCommand(chatId, text);
         } else if (text.startsWith("/stock")) {
@@ -399,6 +411,24 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         } else if (data.startsWith("DEPTH_")) {
             String ticker = data.substring("DEPTH_".length());
             handleMarketDepthCommand(chatId, "/depth " + ticker);
+        } else if (data.startsWith("REPORT_PRO_")) {
+            String capStr = data.substring("REPORT_PRO_".length());
+            BigDecimal cap = "DEFAULT".equals(capStr) ? null : new BigDecimal(capStr);
+            sendProReportFile(chatId, cap);
+        } else if (data.startsWith("REPORT_LIGHT_")) {
+            String capStr = data.substring("REPORT_LIGHT_".length());
+            BigDecimal cap = "DEFAULT".equals(capStr) ? null : new BigDecimal(capStr);
+            sendLightReportFile(chatId, cap);
+        } else if (data.startsWith("REPORT_EXCEL_")) {
+            String capStr = data.substring("REPORT_EXCEL_".length());
+            BigDecimal cap = "DEFAULT".equals(capStr) ? null : new BigDecimal(capStr);
+            sendExcelReportFile(chatId, cap);
+        } else if (data.startsWith("REPORT_MENU_")) {
+            String capStr = data.substring("REPORT_MENU_".length());
+            BigDecimal cap = new BigDecimal(capStr);
+            sendReportMenu(chatId, cap);
+        } else if (data.equals("REPORT_MENU")) {
+            sendReportMenu(chatId, null);
         }
     }
 
@@ -532,6 +562,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         ));
                     }
                     kbBuilder.keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📑 Выгрузить все 1 337 облигаций (PDF / Excel)").callbackData("REPORT_MENU").build()
+                    ));
+                    kbBuilder.keyboardRow(new InlineKeyboardRow(
                             InlineKeyboardButton.builder().text("🔍 Выбрать любую облигацию").switchInlineQueryCurrentChat("").build()
                     ));
 
@@ -579,6 +612,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         ));
                     }
                     kbBuilder.keyboardRow(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📑 Скачать полную базу облигаций (PDF / Excel)").callbackData("REPORT_MENU").build()
+                    ));
+                    kbBuilder.keyboardRow(new InlineKeyboardRow(
                             InlineKeyboardButton.builder().text("🔍 Поиск облигаций").switchInlineQueryCurrentChat("").build()
                     ));
 
@@ -623,6 +659,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                     InlineKeyboardButton.builder().text("📊 AIRA").callbackData("STOCK_AIRA").build(),
                                     InlineKeyboardButton.builder().text("📊 KMGZ").callbackData("STOCK_KMGZ").build(),
                                     InlineKeyboardButton.builder().text("📊 CCBN").callbackData("STOCK_CCBN").build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("📑 Скачать полный отчет по всем акциям (PDF / Excel)").callbackData("REPORT_MENU").build()
                             ))
                             .keyboardRow(new InlineKeyboardRow(
                                     InlineKeyboardButton.builder().text("🔍 Поиск любой акции").switchInlineQueryCurrentChat("").build()
@@ -1669,6 +1708,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 • <code>/bond &lt;ТИКЕР&gt;</code> — подробная карточка облигации (например: <code>/bond KZTKb3</code>)
                 • <code>/stock &lt;ТИКЕР&gt;</code> — карточка акции (например: <code>/stock KSPI</code>)
                 • <code>/calc &lt;ТИКЕР&gt; &lt;СУММА&gt;</code> — калькулятор дохода (например: <code>/calc KZTKb3 500000</code>)
+                • <code>/report &lt;СУММА&gt;</code> — выгрузка полного PRO PDF (6 стр.), LIGHT PDF (4 стр.) и базы Excel
                 • <code>/track &lt;ТИКЕР&gt;</code> — добавить в персональный вотчлист
                 • <code>/settings</code> — управление категориями подписок
                 """;
@@ -1700,8 +1740,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 .keyboardRow(new KeyboardRow("⚡ Пульс рынка", "📈 Акции KASE"))
                 .keyboardRow(new KeyboardRow("📉 Скидки (<95%)", "🏆 Топ доходностей"))
                 .keyboardRow(new KeyboardRow("⚖️ Арбитраж KASE/AIX", "🏛️ Биржа AIX"))
-                .keyboardRow(new KeyboardRow("🧮 Калькулятор", settingsLabel))
-                .keyboardRow(new KeyboardRow("🔔 Мои алерты", "ℹ️ О боте"))
+                .keyboardRow(new KeyboardRow("📑 Отчеты (PDF/Excel)", "🧮 Калькулятор"))
+                .keyboardRow(new KeyboardRow("🔔 Мои алерты", settingsLabel))
+                .keyboardRow(new KeyboardRow("ℹ️ О боте"))
                 .resizeKeyboard(true)
                 .isPersistent(true)
                 .build();
@@ -2510,6 +2551,173 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             return code != null && code.toUpperCase().startsWith("BRKZ");
         }
         return false;
+    }
+
+    private void sendChatAction(Long chatId, String action) {
+        try {
+            telegramClient.execute(SendChatAction.builder()
+                    .chatId(chatId.toString())
+                    .action(action)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to send chat action {} to {}: {}", action, chatId, e.getMessage());
+        }
+    }
+
+    private void sendDocument(Long chatId, byte[] fileBytes, String fileName, String caption) {
+        try {
+            InputFile inputFile = new InputFile(new ByteArrayInputStream(fileBytes), fileName);
+            SendDocument sendDocument = SendDocument.builder()
+                    .chatId(chatId.toString())
+                    .document(inputFile)
+                    .caption(caption)
+                    .parseMode("HTML")
+                    .build();
+            telegramClient.execute(sendDocument);
+        } catch (Exception ex) {
+            log.error("Failed to send Telegram document {} to chatId {}: {}", fileName, chatId, ex.getMessage(), ex);
+            sendMessage(chatId, "❌ Ошибка при отправке файла <b>" + escapeHtml(fileName) + "</b>. Пожалуйста, попробуйте позже.", null);
+        }
+    }
+
+    private void handleReportCommand(Long chatId, String text) {
+        BigDecimal capital = parseCapitalFromCommand(text);
+        sendReportMenu(chatId, capital);
+    }
+
+    private BigDecimal parseCapitalFromCommand(String text) {
+        if (text == null) return null;
+        String[] parts = text.trim().split("\\s+");
+        if (parts.length >= 2) {
+            try {
+                String cleaned = parts[1].replaceAll("[^0-9.]", "");
+                if (!cleaned.isEmpty()) {
+                    return new BigDecimal(cleaned);
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private void sendReportMenu(Long chatId, BigDecimal capital) {
+        String capStr = (capital != null && capital.compareTo(BigDecimal.ZERO) > 0)
+                ? formatMoney(capital) + " ₸"
+                : "26 500 000 ₸ (1-комн. квартира в Алматы)";
+        String capParam = (capital != null && capital.compareTo(BigDecimal.ZERO) > 0)
+                ? capital.toPlainString()
+                : "DEFAULT";
+
+        String text = String.format("""
+                📑 <b>Аналитические отчеты KASE &amp; AIX</b>
+
+                В Telegram невозможно уместить все 165+ акций и 1 337 облигаций. Скачайте официальные аналитические отчеты с глубокими расчетами и инфографикой:
+
+                🏛️ <b>PRO Research (PDF, 6 страниц)</b>
+                • Макроэкономика Казахстана (базовая ставка 16.25%%, инфляция, ВВП)
+                • Индекс страха и жадности (KZ Fear &amp; Greed Index)
+                • Кривая доходности ГЦБ Минфина и НБРК
+                • Трекер крупных игроков («китов») и байбэков
+                • Матрица риска ликвидности и Free Float
+                • Модель институциональной аллокации портфеля
+
+                🌱 <b>LIGHT Guide (PDF, 4 страницы)</b>
+                • Битва доходностей: Квартира (26.5M ₸) vs Депозит vs Облигации
+                • Светофор надежности эмитентов (🟢/🔵/🟡/🔴)
+                • Календарь выплат купонов на 12 месяцев
+                • Валютный щит (защита от девальвации)
+                • Пошаговое руководство для новичка
+
+                📊 <b>Полная база Excel (.xlsx, 4 листа)</b>
+                • Все 165+ акций и 1 337 облигаций с фильтрами
+                • Доходность к погашению (YTM), дюрация, дисконты
+                • Объемы торгов и количество сделок за 2022–2026 гг.
+                • Межбиржевой арбитраж цен KASE ⇄ AIX
+
+                <i>Базовый капитал для моделирования: <b>%s</b></i>
+                <i>Для изменения капитала введите:</i> <code>/report 5000000</code>
+                """, capStr);
+
+        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("🏛️ Скачать PRO (PDF)").callbackData("REPORT_PRO_" + capParam).build(),
+                        InlineKeyboardButton.builder().text("🌱 Скачать LIGHT (PDF)").callbackData("REPORT_LIGHT_" + capParam).build()
+                ))
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("📊 Скачать полную базу Excel (.xlsx)").callbackData("REPORT_EXCEL_" + capParam).build()
+                ))
+                .keyboardRow(new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("🧮 5 млн ₸").callbackData("REPORT_MENU_5000000").build(),
+                        InlineKeyboardButton.builder().text("🧮 10 млн ₸").callbackData("REPORT_MENU_10000000").build(),
+                        InlineKeyboardButton.builder().text("🧮 26.5 млн ₸").callbackData("REPORT_MENU_26500000").build()
+                ))
+                .build();
+
+        sendMessage(chatId, text, kb);
+    }
+
+    private void sendProReportFile(Long chatId, BigDecimal capital) {
+        sendChatAction(chatId, "upload_document");
+        sendMessage(chatId, "⏳ <i>Формирую 6-страничный институциональный отчет KASE &amp; AIX PRO... Пожалуйста, подождите 2-3 секунды.</i>", null);
+
+        reportExportService.exportProPdf(capital)
+                .doOnSuccess(bytes -> {
+                    String fileName = "KASE_AIX_Market_Research_PRO_" + LocalDate.now() + ".pdf";
+                    String caption = "🏛️ <b>KASE &amp; AIX Market Research (PRO)</b>\n" +
+                            "<i>Институциональный аналитический отчет фондового рынка Казахстана.</i>\n" +
+                            "• 6 страниц профессиональной аналитики\n" +
+                            "• Макро-метрики, Fear &amp; Greed Index, кривая ГЦБ, трекер китов\n" +
+                            "• Сгенерировано: " + LocalDate.now();
+                    sendDocument(chatId, bytes, fileName, caption);
+                })
+                .doOnError(err -> {
+                    log.error("Failed to generate PRO PDF report for chatId {}: {}", chatId, err.getMessage(), err);
+                    sendMessage(chatId, "❌ Не удалось сгенерировать PRO PDF-отчет: " + escapeHtml(err.getMessage()), null);
+                })
+                .subscribe();
+    }
+
+    private void sendLightReportFile(Long chatId, BigDecimal capital) {
+        sendChatAction(chatId, "upload_document");
+        sendMessage(chatId, "⏳ <i>Формирую гид частного инвестора LIGHT... Пожалуйста, подождите 2-3 секунды.</i>", null);
+
+        reportExportService.exportLightPdf(capital)
+                .doOnSuccess(bytes -> {
+                    String fileName = "KASE_Investor_Guide_LIGHT_" + LocalDate.now() + ".pdf";
+                    String caption = "🌱 <b>Гид частного инвестора KASE (LIGHT)</b>\n" +
+                            "<i>Настольная книга частного инвестора по фондовому рынку РК.</i>\n" +
+                            "• Битва доходностей: Квартира vs Депозит vs Облигации\n" +
+                            "• Светофор надежности, календарь выплат и валютный щит\n" +
+                            "• Сгенерировано: " + LocalDate.now();
+                    sendDocument(chatId, bytes, fileName, caption);
+                })
+                .doOnError(err -> {
+                    log.error("Failed to generate LIGHT PDF report for chatId {}: {}", chatId, err.getMessage(), err);
+                    sendMessage(chatId, "❌ Не удалось сгенерировать LIGHT PDF-отчет: " + escapeHtml(err.getMessage()), null);
+                })
+                .subscribe();
+    }
+
+    private void sendExcelReportFile(Long chatId, BigDecimal capital) {
+        sendChatAction(chatId, "upload_document");
+        sendMessage(chatId, "⏳ <i>Формирую полную базу данных KASE &amp; AIX в Excel... Пожалуйста, подождите 2-3 секунды.</i>", null);
+
+        reportExportService.exportExcel(capital)
+                .doOnSuccess(bytes -> {
+                    String fileName = "KASE_AIX_Market_Database_" + LocalDate.now() + ".xlsx";
+                    String caption = "📊 <b>Полная база данных KASE &amp; AIX (Excel)</b>\n" +
+                            "<i>Сводные данные по всем обращающимся бумагам.</i>\n" +
+                            "• Лист 1: 165+ Акций KASE &amp; AIX с фильтрами\n" +
+                            "• Лист 2: 1 337 Облигаций (YTM, купоны, дюрация)\n" +
+                            "• Лист 3: Межбиржевой арбитраж цен KASE ⇄ AIX\n" +
+                            "• Лист 4: Макроэкономика и статистика объемов 2022–2026 гг.\n" +
+                            "• Сгенерировано: " + LocalDate.now();
+                    sendDocument(chatId, bytes, fileName, caption);
+                })
+                .doOnError(err -> {
+                    log.error("Failed to generate Excel report for chatId {}: {}", chatId, err.getMessage(), err);
+                    sendMessage(chatId, "❌ Не удалось сгенерировать Excel-отчет: " + escapeHtml(err.getMessage()), null);
+                })
+                .subscribe();
     }
 }
 

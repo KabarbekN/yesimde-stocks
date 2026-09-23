@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Интерактивное превью отчетов: PRO и LIGHT (KASE & AIX)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 16mm 18mm;
+            margin: 0 auto 24px auto;
+            background: white;
+            box-shadow: 0 10px 30px -5px rgba(0,0,0,0.15), 0 0 1px rgba(0,0,0,0.2);
+            border-radius: 4px;
+            box-sizing: border-box;
+            position: relative;
+        }
+        @media print {
+            body { background: white; margin: 0; padding: 0; }
+            .no-print { display: none !important; }
+            .a4-page { box-shadow: none; margin: 0; padding: 15mm; page-break-after: always; }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+
+    <!-- Top Floating Switcher Bar -->
+    <header class="no-print sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-6 py-3">
+        <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/30">
+                    ₸
+                </div>
+                <div>
+                    <h1 class="text-sm font-bold text-white tracking-wide">KASE & AIX RADAR <span class="text-xs font-normal text-slate-400">| Preview Отчетов</span></h1>
+                    <p class="text-[11px] text-slate-400">Сгенерировано на базе данных KASE 2022–2026 (2.13 трлн ₸)</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+                <button onclick="switchTab('pro')" id="btn-pro" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow">
+                    👔 PRO: Институциональный PDF
+                </button>
+                <button onclick="switchTab('light')" id="btn-light" class="px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-all">
+                    🌱 LIGHT: Гид инвестора PDF
+                </button>
+                <button onclick="switchTab('excel')" id="btn-excel" class="px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-all">
+                    📊 Excel: Живая модель (.xlsx)
+                </button>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button onclick="window.print()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition">
+                    🖨️ Печать / Сохранить в PDF
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="py-8 px-4 flex justify-center">
+
+        <!-- ========================================================================= -->
+        <!-- TAB 1: PRO INSTITUTIONAL RESEARCH REPORT (A4) -->
+        <!-- ========================================================================= -->
+        <div id="tab-pro" class="block w-full max-w-[210mm]">
+            <div class="a4-page bg-[#0B0F19] text-slate-200 border border-slate-800" style="color: #E2E8F0;">
+                
+                <!-- Header -->
+                <div class="flex items-start justify-between border-b border-slate-800 pb-4 mb-5">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">INSTITUTIONAL EQUITY & FIXED INCOME RESEARCH</span>
+                            <span class="text-xs text-slate-500">• Сентябрь 2026</span>
+                        </div>
+                        <h2 class="text-2xl font-extrabold tracking-tight text-white">KASE & AIX MARKET INTELLIGENCE</h2>
+                        <p class="text-xs text-slate-400">Полный аудит ликвидности, институциональных потоков, Free Float и суверенной кривой</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs font-bold text-white uppercase tracking-wider">KASE & AIX RADAR</div>
+                        <div class="text-[10px] text-slate-400">Source: KASE Official Stats 2022–2026</div>
+                        <div class="text-[10px] text-emerald-400 font-mono mt-0.5">● LIVE MARKET SYNC</div>
+                    </div>
+                </div>
+
+                <!-- Macro KPI Bar -->
+                <div class="grid grid-cols-4 gap-3 mb-5">
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Совокупный оборот акций</div>
+                        <div class="text-lg font-bold text-white font-mono mt-0.5">2.13 трлн ₸</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">2 127 860 млн ₸ (2022–2026)</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Всего сделок (Акции)</div>
+                        <div class="text-lg font-bold text-emerald-400 font-mono mt-0.5">8 423 997</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">HSBK = 28% всех сделок биржи</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Концентрация Top-3</div>
+                        <div class="text-lg font-bold text-amber-400 font-mono mt-0.5">35.2% рынка</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">KMGZ + HSBK + KZTK</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Суверенная доходность ГЦБ</div>
+                        <div class="text-lg font-bold text-cyan-400 font-mono mt-0.5">14.5% – 16.9%</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">Бенчмарк без риска (ИПН 0%)</div>
+                    </div>
+                </div>
+
+                <!-- Two Column Visual Section: Fear & Greed + Top Turnovers -->
+                <div class="grid grid-cols-12 gap-4 mb-5">
+                    <!-- Fear & Greed -->
+                    <div class="col-span-5 bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-white uppercase tracking-wider">KZ FEAR & GREED INDEX</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">GREED (ЖАДНОСТЬ)</span>
+                        </div>
+                        
+                        <!-- SVG Gauge -->
+                        <div class="relative flex items-center justify-center my-2">
+                            <svg class="w-44 h-24" viewBox="0 0 160 90">
+                                <path d="M 20 80 A 60 60 0 0 1 140 80" fill="none" stroke="#1E293B" stroke-width="14" stroke-linecap="round"/>
+                                <path d="M 20 80 A 60 60 0 0 1 125 40" fill="none" stroke="url(#gauge-grad)" stroke-width="14" stroke-linecap="round"/>
+                                <defs>
+                                    <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stop-color="#EF4444" />
+                                        <stop offset="50%" stop-color="#F59E0B" />
+                                        <stop offset="100%" stop-color="#10B981" />
+                                    </linearGradient>
+                                </defs>
+                            </svg>
+                            <div class="absolute bottom-1 text-center">
+                                <div class="text-3xl font-extrabold font-mono text-white">68</div>
+                                <div class="text-[10px] text-slate-400 uppercase tracking-wider">Умеренный аппетит к риску</div>
+                            </div>
+                        </div>
+
+                        <p class="text-[11px] text-slate-400 leading-relaxed">
+                            Приток розничных инвесторов в акции HSBK и AIRA устойчив. Корпоративные бонды торгуются с узким спредом к Нацбанку. Рекомендуется частичная фиксация спекулятивной прибыли.
+                        </p>
+                    </div>
+
+                    <!-- Top 5 Liquidity Bar Chart -->
+                    <div class="col-span-7 bg-slate-900/80 p-4 rounded-xl border border-slate-800">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-xs font-bold text-white uppercase tracking-wider">ТОП-6 АКЦИЙ ПО ОБОРОТУ (МЛРД ₸)</span>
+                            <span class="text-[10px] text-slate-400">Кумулятивно 2022–2026</span>
+                        </div>
+                        <div class="space-y-2.5 text-xs">
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1">
+                                    <span class="font-bold text-white">KMGZ (КазМунайГаз)</span>
+                                    <span class="font-mono text-cyan-400">414.0 млрд ₸ (19.5%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div class="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full" style="width: 100%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1">
+                                    <span class="font-bold text-white">HSBK (Народный Банк)</span>
+                                    <span class="font-mono text-emerald-400">179.1 млрд ₸ (8.4%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full" style="width: 43.3%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1">
+                                    <span class="font-bold text-white">KZTK (Казахтелеком)</span>
+                                    <span class="font-mono text-purple-400">155.1 млрд ₸ (7.3%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div class="bg-gradient-to-r from-purple-500 to-indigo-400 h-full rounded-full" style="width: 37.5%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1">
+                                    <span class="font-bold text-white">CCBN (Банк ЦентрКредит)</span>
+                                    <span class="font-mono text-amber-400">98.9 млрд ₸ (4.6%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div class="bg-gradient-to-r from-amber-500 to-orange-400 h-full rounded-full" style="width: 23.9%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1">
+                                    <span class="font-bold text-white">AIRA (Air Astana)</span>
+                                    <span class="font-mono text-sky-400">98.9 млрд ₸ (4.6%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div class="bg-gradient-to-r from-sky-500 to-blue-400 h-full rounded-full" style="width: 23.9%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1">
+                                    <span class="font-bold text-white">BITO_KZ (Bitcoin Strategy ETF)</span>
+                                    <span class="font-mono text-yellow-400">65.4 млрд ₸ (3.1%)</span>
+                                </div>
+                                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div class="bg-gradient-to-r from-yellow-500 to-amber-400 h-full rounded-full" style="width: 15.8%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Whale Radar & Institutional Flows Table -->
+                <div class="bg-slate-900/80 rounded-xl border border-slate-800 overflow-hidden mb-5">
+                    <div class="px-4 py-2.5 bg-slate-850 border-b border-slate-800 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-white uppercase tracking-wider">🐋 РАДАР КИТОВ, БАЙБЭКОВ И СТРУКТУРЫ FREE FLOAT</span>
+                        </div>
+                        <span class="text-[10px] text-slate-400">Сортировка по типу участников сделок</span>
+                    </div>
+
+                    <table class="w-full text-left text-[11px]">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-800 bg-slate-900/50">
+                                <th class="py-2 px-3">Код</th>
+                                <th class="py-2 px-3">Эмитент</th>
+                                <th class="py-2 px-3 text-right">Сделок</th>
+                                <th class="py-2 px-3 text-right">Объем (млн ₸)</th>
+                                <th class="py-2 px-3 text-right">Средний чек</th>
+                                <th class="py-2 px-3 text-center">Free Float %</th>
+                                <th class="py-2 px-3 text-center">Характер движения</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/60 font-mono">
+                            <tr class="hover:bg-slate-800/40">
+                                <td class="py-2 px-3 font-bold text-cyan-400">ALMS</td>
+                                <td class="py-2 px-3 font-sans text-slate-200">АК Алтыналмас</td>
+                                <td class="py-2 px-3 text-right text-slate-400">6</td>
+                                <td class="py-2 px-3 text-right font-bold text-white">42 790.4</td>
+                                <td class="py-2 px-3 text-right text-purple-400 font-bold">7.13 млрд ₸</td>
+                                <td class="py-2 px-3 text-center text-slate-400">—</td>
+                                <td class="py-2 px-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30">Байбэк / Блочные сделки</span></td>
+                            </tr>
+                            <tr class="hover:bg-slate-800/40">
+                                <td class="py-2 px-3 font-bold text-cyan-400">KZTK</td>
+                                <td class="py-2 px-3 font-sans text-slate-200">Казахтелеком</td>
+                                <td class="py-2 px-3 text-right text-slate-400">56 353</td>
+                                <td class="py-2 px-3 text-right font-bold text-white">155 093.8</td>
+                                <td class="py-2 px-3 text-right text-purple-400">2.75 млн ₸</td>
+                                <td class="py-2 px-3 text-center text-amber-400 font-bold">8.73%</td>
+                                <td class="py-2 px-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30">Узкий Free Float / Выкуп</span></td>
+                            </tr>
+                            <tr class="hover:bg-slate-800/40">
+                                <td class="py-2 px-3 font-bold text-cyan-400">KMGZ</td>
+                                <td class="py-2 px-3 font-sans text-slate-200">КазМунайГаз</td>
+                                <td class="py-2 px-3 text-right text-slate-400">375 731</td>
+                                <td class="py-2 px-3 text-right font-bold text-white">414 044.9</td>
+                                <td class="py-2 px-3 text-right text-slate-300">1.10 млн ₸</td>
+                                <td class="py-2 px-3 text-center text-slate-400">—</td>
+                                <td class="py-2 px-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30">Институционал + IPO</span></td>
+                            </tr>
+                            <tr class="hover:bg-slate-800/40">
+                                <td class="py-2 px-3 font-bold text-cyan-400">AIRA</td>
+                                <td class="py-2 px-3 font-sans text-slate-200">Эйр Астана</td>
+                                <td class="py-2 px-3 text-right text-slate-400">420 925</td>
+                                <td class="py-2 px-3 text-right font-bold text-white">98 862.9</td>
+                                <td class="py-2 px-3 text-right text-emerald-400">235 000 ₸</td>
+                                <td class="py-2 px-3 text-center text-emerald-400 font-bold">58.52%</td>
+                                <td class="py-2 px-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Максимальный Free Float</span></td>
+                            </tr>
+                            <tr class="hover:bg-slate-800/40">
+                                <td class="py-2 px-3 font-bold text-cyan-400">HSBK</td>
+                                <td class="py-2 px-3 font-sans text-slate-200">Народный Банк</td>
+                                <td class="py-2 px-3 text-right text-slate-400">2 334 138</td>
+                                <td class="py-2 px-3 text-right font-bold text-white">179 140.3</td>
+                                <td class="py-2 px-3 text-right text-emerald-400">76 700 ₸</td>
+                                <td class="py-2 px-3 text-center text-blue-400 font-bold">37.76%</td>
+                                <td class="py-2 px-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Народный фаворит (Retail)</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Footer Summary Callout -->
+                <div class="border-t border-slate-800 pt-3 flex items-center justify-between text-[10px] text-slate-500">
+                    <div>Отчет сформирован автоматически движком KASE & AIX Radar | Лицензия АРРФР / Биржевой протокол</div>
+                    <div class="font-mono text-slate-400">Страница 1 из 4</div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- TAB 2: LIGHT RETAIL GUIDE (A4) -->
+        <!-- ========================================================================= -->
+        <div id="tab-light" class="hidden w-full max-w-[210mm]">
+            <div class="a4-page bg-slate-50 text-slate-850 border border-slate-200" style="color: #1E293B;">
+                
+                <!-- Friendly Header -->
+                <div class="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 -mx-[18mm] -mt-[16mm] p-8 text-white mb-6 rounded-b-3xl shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-block px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold text-white mb-2">
+                                💡 Гид инвестора в Казахстане • Выпуск 2026
+                            </span>
+                            <h2 class="text-3xl font-black tracking-tight">Пассивный доход на KASE и AIX</h2>
+                            <p class="text-sm text-blue-100 mt-1 max-w-lg">
+                                Как защитить сбережения в тенге от инфляции, обогнать банковский депозит и получать регулярную купонную «зарплату».
+                            </p>
+                        </div>
+                        <div class="bg-white p-2 rounded-2xl shadow text-center">
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=72x72&data=https://t.me/KaseRadarBot" alt="QR" class="w-16 h-16 rounded">
+                            <div class="text-[9px] text-slate-600 font-bold mt-1">Бот в Telegram</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Battle Section: Deposit vs Bonds vs Real Estate (Based on Krisha.kz and KFGD Sept 2026) -->
+                <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                            <span>🥊 Битва доходностей: Куда вложить 26 500 000 ₸ (цена 1-комн. квартиры в Алматы)?</span>
+                        </h3>
+                        <span class="text-[10px] text-slate-500 font-mono">Источник: Krisha.kz & КФГД (сентябрь 2026)</span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3">
+                        <!-- Deposit -->
+                        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-slate-500 uppercase">Банковский депозит</span>
+                                <span class="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded">ГЭСВ 14.5% – 15%</span>
+                            </div>
+                            <div class="text-xl font-black text-slate-800 mt-1">14.5% <span class="text-xs font-normal text-slate-500">Kaspi / Halyk</span></div>
+                            <div class="text-sm font-bold text-blue-600 font-mono mt-0.5">+3 842 500 ₸ / год</div>
+                            <ul class="text-[11px] text-slate-600 mt-2.5 space-y-1">
+                                <li>• Сумма 26.5 млн <b>выше лимита КФГД</b> (гарантия 10 млн, сберег. 20 млн) — нужно дробить по банкам</li>
+                                <li>• Сберегательный вклад дает до 17.5%, но <b>деньги «заморожены»</b>: при досрочном снятии сгорают 100% процентов</li>
+                                <li>• Нацбанк снижает базовую ставку (16.25%) — банки скоро понизят процент по вкладам</li>
+                            </ul>
+                        </div>
+
+                        <!-- Real Estate (Krisha.kz factual data) -->
+                        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-slate-500 uppercase">1-комн. квартира (Алматы)</span>
+                                <span class="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded">Krisha.kz</span>
+                            </div>
+                            <div class="text-xl font-black text-slate-800 mt-1">~8.1% <span class="text-xs font-normal text-slate-500">чистая доходность</span></div>
+                            <div class="text-sm font-bold text-slate-700 font-mono mt-0.5">+2 150 000 ₸ / год чистыми</div>
+                            <ul class="text-[11px] text-slate-600 mt-2.5 space-y-1">
+                                <li>• Покупка: <b>26.5 млн ₸</b> (медиана 1-комн. на Krisha.kz)</li>
+                                <li>• Аренда: <b>230 000 ₸/мес</b> (2.76 млн/год) минус 1 мес. простоя, ремонт, амортизация мебели и налог</li>
+                                <li>• <b>Огромный порог входа</b> (26.5 млн ₸) и нулевая гибкость: нельзя срочно продать часть квартиры</li>
+                            </ul>
+                        </div>
+
+                        <!-- KASE Bonds (Winner) -->
+                        <div class="bg-emerald-50 p-4 rounded-2xl border-2 border-emerald-500 shadow-md relative overflow-hidden">
+                            <span class="absolute -right-7 top-3 bg-emerald-500 text-white text-[9px] font-extrabold uppercase py-0.5 px-8 rotate-45 shadow">ВЫГОДНО</span>
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-emerald-800 uppercase">Облигации KASE (Квазигос)</span>
+                                <span class="text-[9px] bg-emerald-200 text-emerald-900 font-bold px-1.5 py-0.5 rounded">ИПН 0%</span>
+                            </div>
+                            <div class="text-xl font-black text-emerald-700 mt-1">17.45% <span class="text-xs font-normal text-emerald-800">годовых</span></div>
+                            <div class="text-sm font-black text-emerald-900 font-mono mt-0.5">+4 624 250 ₸ / год чистыми</div>
+                            <ul class="text-[11px] text-emerald-900 mt-2.5 space-y-1">
+                                <li><b>• +781 750 ₸ к депозиту</b> и <b>в 2.1 раза больше аренды квартиры</b>!</li>
+                                <li><b>• Ставка фиксируется на 3–5 лет</b> (Отбасы, БРК, Самрук) — банк снизит ставку, а по бондам доход залочен</li>
+                                <li><b>• Снятие без потери % в любой рабочий день</b> (продажа с выплатой накопленного купона НКД)</li>
+                                <li><b>• Порог входа — от 1 000 тенге</b>, а не 26.5 млн ₸!</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Traffic Light Safety Score -->
+                <div class="mb-6">
+                    <h3 class="text-base font-extrabold text-slate-900 mb-3">🚦 Светофор надежности: Как выбирать бумаги без страха</h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-white p-3.5 rounded-2xl border-l-4 border-emerald-500 border border-slate-200 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-emerald-700">🟢 ЗЕЛЕНЫЙ: Вместо депозита (15.5–17.5%)</span>
+                                <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">Риск 0%</span>
+                            </div>
+                            <p class="text-[11px] text-slate-600 mt-1">
+                                <b>Гособлигации Минфина РК, Самрук-Казына, БРК, Отбасы Банк</b>. Гарантия государства. Идеально для хранения подушки безопасности.
+                            </p>
+                        </div>
+
+                        <div class="bg-white p-3.5 rounded-2xl border-l-4 border-blue-500 border border-slate-200 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-blue-700">🔵 СИНИЙ: Дивидендные чемпионы</span>
+                                <span class="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">Дивиденды 10–14%</span>
+                            </div>
+                            <p class="text-[11px] text-slate-600 mt-1">
+                                <b>Halyk Bank, Kaspi.kz, Казатомпром, КМГ</b>. Лидеры страны. Выплаты стабильно падают на карту + бизнес растет в цене.
+                            </p>
+                        </div>
+
+                        <div class="bg-white p-3.5 rounded-2xl border-l-4 border-amber-500 border border-slate-200 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-amber-700">🟡 ЖЕЛТЫЙ: Скидки к номиналу (до 22% годовых)</span>
+                                <span class="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded">Выгода на дисконте</span>
+                            </div>
+                            <p class="text-[11px] text-slate-600 mt-1">
+                                <b>Облигации надежных компаний дешевле номинала</b> (покупаете за 920 ₸, а эмитент возвращает 1 000 ₸ + платит купоны).
+                            </p>
+                        </div>
+
+                        <div class="bg-white p-3.5 rounded-2xl border-l-4 border-rose-500 border border-slate-200 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-rose-700">🔴 КРАСНЫЙ: Зона осторожности (Неликвид)</span>
+                                <span class="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded">Только профи</span>
+                            </div>
+                            <p class="text-[11px] text-slate-600 mt-1">
+                                <b>Бумаги без маркетмейкеров и редкие сделки</b>. Если бумага торгуется раз в полгода, из нее трудно выйти. Новичкам вход запрещен.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monthly Paycheck Calendar -->
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-5">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-slate-900 uppercase">📅 Календарь купонной зарплаты: Выплаты все 12 месяцев</span>
+                        <span class="text-[11px] font-bold text-blue-600">Корзина из 4-х бумаг</span>
+                    </div>
+                    <div class="grid grid-cols-12 gap-1 text-center font-mono text-[10px]">
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Янв</span>85k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Фев</span>90k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Мар</span>85k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Апр</span>90k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Май</span>85k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Июн</span>90k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Июл</span>85k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Авг</span>90k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Сен</span>85k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Окт</span>90k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Ноя</span>85k ₸</div>
+                        <div class="p-2 bg-emerald-50 rounded border border-emerald-200"><span class="block font-bold text-emerald-800">Дек</span>90k ₸</div>
+                    </div>
+                </div>
+
+                <!-- Footer Quick Steps -->
+                <div class="border-t border-slate-200 pt-3 flex items-center justify-between text-[11px] text-slate-500">
+                    <div><b>Как начать:</b> Откройте брокерский счет онлайн через Halyk, Freedom, BCC или Jusan за 2 минуты.</div>
+                    <div class="font-bold text-blue-600">t.me/KaseRadarBot</div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- TAB 3: EXCEL MODEL (.XLSX PREVIEW) -->
+        <!-- ========================================================================= -->
+        <div id="tab-excel" class="hidden w-full max-w-5xl">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+                <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-4">
+                    <div>
+                        <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">MICROSOFT EXCEL (.XLSX) • 4 СТИЛИЗОВАННЫХ ЛИСТА</span>
+                        <h2 class="text-xl font-bold text-white mt-1">Интерактивная финансовая модель KASE & AIX</h2>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <label class="text-xs text-slate-400">Сумма инвестиций для пересчета:</label>
+                        <input id="input-amount" type="number" value="1000000" oninput="recalcExcel(this.value)" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white w-36 text-right focus:outline-none focus:border-blue-500">
+                        <span class="text-sm font-bold text-slate-300">₸</span>
+                    </div>
+                </div>
+
+                <!-- Excel Tabs Simulation -->
+                <div class="flex gap-2 mb-3 text-xs">
+                    <button class="px-3 py-1 bg-emerald-600 text-white rounded font-bold">Лист 1: 📈 Акции и Оборот</button>
+                    <button class="px-3 py-1 bg-slate-800 text-slate-400 hover:text-white rounded">Лист 2: 📉 Все 1 337 Облигаций</button>
+                    <button class="px-3 py-1 bg-slate-800 text-slate-400 hover:text-white rounded">Лист 3: ⚖️ Арбитраж KASE/AIX</button>
+                    <button class="px-3 py-1 bg-slate-800 text-slate-400 hover:text-white rounded">Лист 4: 🐋 Киты 2022-2026</button>
+                </div>
+
+                <!-- Excel Table -->
+                <div class="overflow-x-auto rounded-xl border border-slate-800">
+                    <table class="w-full text-left text-xs font-mono">
+                        <thead class="bg-slate-800 text-slate-300">
+                            <tr>
+                                <th class="p-2.5">Тикер</th>
+                                <th class="p-2.5">Компания</th>
+                                <th class="p-2.5 text-right">Цена</th>
+                                <th class="p-2.5 text-right">Купон / YTM</th>
+                                <th class="p-2.5 text-right">Лотов к покупке</th>
+                                <th class="p-2.5 text-right">Выплата в год</th>
+                                <th class="p-2.5 text-center">Налог</th>
+                                <th class="p-2.5 text-center">Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody id="excel-rows" class="divide-y divide-slate-800 bg-slate-900/60">
+                            <!-- Populated dynamically by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="text-xs text-slate-500 mt-4">
+                    💡 При экспорте в .xlsx таблица содержит автофильтры, закрепленные строки заголовков, цветовые шкалы по доходности и готовые формулы Excel: <code>=SUM()</code>, <code>=ROUND()</code>, <code>=XLOOKUP()</code>.
+                </p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        function switchTab(tab) {
+            document.getElementById('tab-pro').classList.add('hidden');
+            document.getElementById('tab-light').classList.add('hidden');
+            document.getElementById('tab-excel').classList.add('hidden');
+
+            document.getElementById('btn-pro').className = 'px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-all';
+            document.getElementById('btn-light').className = 'px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-all';
+            document.getElementById('btn-excel').className = 'px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-all';
+
+            if (tab === 'pro') {
+                document.getElementById('tab-pro').classList.remove('hidden');
+                document.getElementById('btn-pro').className = 'px-4 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white shadow';
+            } else if (tab === 'light') {
+                document.getElementById('tab-light').classList.remove('hidden');
+                document.getElementById('btn-light').className = 'px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow';
+            } else {
+                document.getElementById('tab-excel').classList.remove('hidden');
+                document.getElementById('btn-excel').className = 'px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow';
+                recalcExcel(document.getElementById('input-amount').value);
+            }
+        }
+
+        const sampleBonds = [
+            { ticker: 'JSBNb2', name: 'Отбасы Банк', price: 1000, rate: 0.1745, category: 'Квазигос' },
+            { ticker: 'BRKZb18', name: 'Банк Развития Казахстана', price: 1000, rate: 0.1700, category: 'Квазигос' },
+            { ticker: 'SKKZb23', name: 'Самрук-Қазына', price: 1000, rate: 0.1680, category: 'Квазигос' },
+            { ticker: 'MUM120_0018', name: 'Минфин РК (ГЦБ)', price: 1000, rate: 0.1550, category: 'ГЦБ' },
+            { ticker: 'HSBKb22', name: 'Народный Банк', price: 920, rate: 0.1723, category: 'Скидка (<95%)' },
+            { ticker: 'BERKb22', name: 'Береке Банк (TONIA)', price: 1000, rate: 0.1782, category: 'Плавающая' }
+        ];
+
+        function recalcExcel(amountStr) {
+            const amount = parseFloat(amountStr) || 0;
+            const tbody = document.getElementById('excel-rows');
+            tbody.innerHTML = '';
+            sampleBonds.forEach(b => {
+                const lots = Math.floor(amount / b.price);
+                const annualIncome = Math.round(lots * b.price * b.rate);
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-800/40';
+                tr.innerHTML = `
+                    <td class="p-2.5 font-bold text-cyan-400">${b.ticker}</td>
+                    <td class="p-2.5 font-sans text-slate-200">${b.name}</td>
+                    <td class="p-2.5 text-right text-slate-300">${b.price.toLocaleString('ru-RU')} ₸</td>
+                    <td class="p-2.5 text-right font-bold text-emerald-400">${(b.rate * 100).toFixed(2)}%</td>
+                    <td class="p-2.5 text-right text-white font-bold">${lots.toLocaleString('ru-RU')} шт.</td>
+                    <td class="p-2.5 text-right font-bold text-emerald-400">+${annualIncome.toLocaleString('ru-RU')} ₸</td>
+                    <td class="p-2.5 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400">0%</span></td>
+                    <td class="p-2.5 text-center"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">${b.category}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>
