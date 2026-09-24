@@ -4,7 +4,7 @@ import kz.nurgissa.kasestockexchangeparser.model.dtos.ArbitrageItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.ReportMarketSnapshotDto;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
@@ -18,7 +18,7 @@ import java.util.List;
 public class ExcelReportGenerator {
 
     public byte[] generateExcelReport(ReportMarketSnapshotDto snapshot) {
-        try (Workbook workbook = new XSSFWorkbook();
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100);
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
             // Styles
@@ -42,6 +42,7 @@ public class ExcelReportGenerator {
             buildMacroSheet(workbook, snapshot, headerStyle, subHeaderStyle, dataStyle, currencyStyle, percentStyle, boldStyle);
 
             workbook.write(baos);
+            workbook.dispose();
             return baos.toByteArray();
         } catch (Exception e) {
             log.error("Failed to generate Excel report: {}", e.getMessage(), e);

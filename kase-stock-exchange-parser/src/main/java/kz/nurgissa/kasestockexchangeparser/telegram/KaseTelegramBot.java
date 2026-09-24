@@ -572,7 +572,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     sendMessage(chatId, sb.toString(), kbBuilder.build());
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load discounts for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить данные по скидкам. Попробуйте позже.", null);
+                });
     }
 
     private void sendTopYields(Long chatId) {
@@ -622,7 +625,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     sendMessage(chatId, sb.toString(), kbBuilder.build());
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load top yields for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить данные по доходностям. Попробуйте позже.", null);
+                });
     }
 
     private void sendStocks(Long chatId) {
@@ -672,7 +678,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     sendMessage(chatId, sb.toString(), kb);
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load stocks for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить данные по акциям. Попробуйте позже.", null);
+                });
     }
 
     private void sendSubscriptionSettings(Long chatId) {
@@ -817,7 +826,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 "Выберите облигацию ниже (1 нажатие) или скопируйте команду:\n" +
                                 "<pre>/bond " + exampleTicker + "</pre>", kb);
                     })
-                    .subscribe();
+                    .subscribe(null, e -> {
+                        log.error("Failed to load bond examples for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Не удалось загрузить список облигаций. Попробуйте ввести тикер: <code>/bond ТИКЕР</code>", null);
+                    });
             return;
         }
         handleQuickTickerLookup(chatId, parts[1].toUpperCase());
@@ -884,7 +896,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             .build();
                     sendMessage(chatId, msg, stockKb);
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load stock info for {} (chatId {}): {}", ticker, chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить информацию по акции <code>" + escapeHtml(ticker) + "</code>. Попробуйте позже.", null);
+                });
     }
 
     private void handleQuickTickerLookup(Long chatId, String ticker) {
@@ -972,10 +987,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                                         handlePartialSearch(chatId, ticker, aixList);
                                                     }
                                                 })
-                                                .subscribe();
+                                                .subscribe(null, e -> log.error("Failed AIX fallback for {}: {}", ticker, e.getMessage()));
                                     }
                                 })
-                                .subscribe();
+                                .subscribe(null, e -> log.error("Failed KASE search for {}: {}", ticker, e.getMessage()));
                         return;
                     }
 
@@ -1061,7 +1076,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     ));
                     sendMessage(chatId, msg, kbBuilder.build());
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load bond details for {} (chatId {}): {}", ticker, chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить паспорт облигации <code>" + escapeHtml(ticker) + "</code>. Попробуйте позже.", null);
+                });
     }
 
     private void sendWhyNoCouponExplanation(Long chatId, String ticker) {
@@ -1179,7 +1197,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     sendMessage(chatId, sb.toString(), kb.build());
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to render search results for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Ошибка при формировании результатов поиска.", null);
+                });
     }
 
     private void handleCalcCommand(Long chatId, String text) {
@@ -1214,7 +1235,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 "<pre>/calc " + exampleTicker + " 500000</pre>\n\n" +
                                 "<i>Или нажмите на одну из бумаг ниже для мгновенного расчета:</i>", kb);
                     })
-                    .subscribe();
+                    .subscribe(null, e -> {
+                        log.error("Failed to load calc bond list for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Не удалось загрузить калькулятор. Попробуйте <code>/calc ТИКЕР СУММА</code>", null);
+                    });
             return;
         }
 
@@ -1424,7 +1448,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             "• Добавить: <code>/track ТИКЕР</code>\n" +
                             "• Удалить: <code>/untrack ТИКЕР</code>", kb);
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load watchlist for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить вотчлист.", null);
+                });
     }
 
     private void sendAixSummary(Long chatId) {
@@ -1508,7 +1535,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     sendMessage(chatId, sb.toString(), kb);
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load AIX summary for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить сводку AIX.", null);
+                });
     }
 
     private void handleMarketDepthCommand(Long chatId, String text) {
@@ -1584,7 +1614,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
                     sendMessage(chatId, sb.toString(), null);
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to fetch market depth for {} (chatId {}): {}", symbol, chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить стакан котировок AIX.", null);
+                });
     }
 
     private void handleArbitrageCommand(Long chatId, String text) {
@@ -1599,7 +1632,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                         }
                         sendSingleArbitrage(chatId, arb);
                     })
-                    .subscribe();
+                    .subscribe(null, e -> {
+                        log.error("Failed to load arbitrage for {} (chatId {}): {}", ticker, chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Ошибка при расчете арбитража для <code>" + escapeHtml(ticker) + "</code>.", null);
+                    });
             return;
         }
 
@@ -1644,7 +1680,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             .build();
                     sendMessage(chatId, sb.toString(), kb);
                 })
-                .subscribe();
+                .subscribe(null, e -> {
+                    log.error("Failed to load arbitrage opportunities for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить данные по арбитражу KASE ⇄ AIX.", null);
+                });
     }
 
     private void sendSingleArbitrage(Long chatId, kz.nurgissa.kasestockexchangeparser.model.dtos.ArbitrageItemDto arb) {
@@ -1718,36 +1757,38 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private void sendMessage(Long chatId, String text, org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard keyboard) {
-        try {
-            SendMessage.SendMessageBuilder smb = SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(text)
-                    .parseMode("HTML")
-                    .disableWebPagePreview(true);
-            if (keyboard != null) {
-                smb.replyMarkup(keyboard);
-            }
-            telegramClient.execute(smb.build());
-        } catch (Exception ex) {
-            log.warn("HTML send failed for chatId {}, retrying plain text: {}", chatId, ex.getMessage());
+        reactor.core.scheduler.Schedulers.boundedElastic().schedule(() -> {
             try {
-                String plainText = text.replaceAll("<[^>]*>", "")
-                        .replace("&amp;", "&")
-                        .replace("&lt;", "<")
-                        .replace("&gt;", ">")
-                        .replace("&quot;", "\"");
-                SendMessage.SendMessageBuilder fallbackBuilder = SendMessage.builder()
+                SendMessage.SendMessageBuilder smb = SendMessage.builder()
                         .chatId(chatId.toString())
-                        .text(plainText)
+                        .text(text)
+                        .parseMode("HTML")
                         .disableWebPagePreview(true);
                 if (keyboard != null) {
-                    fallbackBuilder.replyMarkup(keyboard);
+                    smb.replyMarkup(keyboard);
                 }
-                telegramClient.execute(fallbackBuilder.build());
-            } catch (Exception ex2) {
-                log.error("Failed to send fallback plain text message to chatId {}: {}", chatId, ex2.getMessage());
+                telegramClient.execute(smb.build());
+            } catch (Exception ex) {
+                log.warn("HTML send failed for chatId {}, retrying plain text: {}", chatId, ex.getMessage());
+                try {
+                    String plainText = text.replaceAll("<[^>]*>", "")
+                            .replace("&amp;", "&")
+                            .replace("&lt;", "<")
+                            .replace("&gt;", ">")
+                            .replace("&quot;", "\"");
+                    SendMessage.SendMessageBuilder fallbackBuilder = SendMessage.builder()
+                            .chatId(chatId.toString())
+                            .text(plainText)
+                            .disableWebPagePreview(true);
+                    if (keyboard != null) {
+                        fallbackBuilder.replyMarkup(keyboard);
+                    }
+                    telegramClient.execute(fallbackBuilder.build());
+                } catch (Exception ex2) {
+                    log.error("Failed to send fallback plain text message to chatId {}: {}", chatId, ex2.getMessage());
+                }
             }
-        }
+        });
     }
 
     private ReplyKeyboardMarkup buildMainMenuKeyboard(Integer activeCount) {
@@ -2245,7 +2286,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 curTh.doubleValue()
                         ), kb);
                     })
-                    .subscribe();
+                    .subscribe(null, e -> {
+                        log.error("Failed to load threshold settings for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Не удалось загрузить настройки порога.", null);
+                    });
             return;
         }
 
@@ -2270,7 +2314,10 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                                 val, val
                         ), null);
                     })
-                    .subscribe();
+                    .subscribe(null, e -> {
+                        log.error("Failed to save threshold for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Не удалось сохранить порог.", null);
+                    });
         } catch (Exception e) {
             sendMessage(chatId, "Неверный формат. Пример: <code>/threshold 2.5</code>", null);
         }
@@ -2573,45 +2620,49 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     }
 
     private void sendChatAction(Long chatId, String action) {
-        try {
-            telegramClient.execute(SendChatAction.builder()
-                    .chatId(chatId.toString())
-                    .action(action)
-                    .build());
-        } catch (Exception e) {
-            log.warn("Failed to send chat action {} to {}: {}", action, chatId, e.getMessage());
-        }
+        reactor.core.scheduler.Schedulers.boundedElastic().schedule(() -> {
+            try {
+                telegramClient.execute(SendChatAction.builder()
+                        .chatId(chatId.toString())
+                        .action(action)
+                        .build());
+            } catch (Exception e) {
+                log.warn("Failed to send chat action {} to {}: {}", action, chatId, e.getMessage());
+            }
+        });
     }
 
     private void sendDocument(Long chatId, byte[] fileBytes, String fileName, String caption) {
-        try {
-            InputFile inputFile = new InputFile(new ByteArrayInputStream(fileBytes), fileName);
-            SendDocument sendDocument = SendDocument.builder()
-                    .chatId(chatId.toString())
-                    .document(inputFile)
-                    .caption(caption)
-                    .parseMode("HTML")
-                    .build();
-            telegramClient.execute(sendDocument);
-        } catch (Exception ex) {
-            log.warn("HTML caption send failed for file {}, retrying plain text: {}", fileName, ex.getMessage());
+        reactor.core.scheduler.Schedulers.boundedElastic().schedule(() -> {
             try {
-                InputFile retryFile = new InputFile(new ByteArrayInputStream(fileBytes), fileName);
-                String plainCaption = caption.replaceAll("<[^>]*>", "")
-                        .replace("&amp;", "&")
-                        .replace("&lt;", "<")
-                        .replace("&gt;", ">");
-                SendDocument retryDoc = SendDocument.builder()
+                InputFile inputFile = new InputFile(new ByteArrayInputStream(fileBytes), fileName);
+                SendDocument sendDocument = SendDocument.builder()
                         .chatId(chatId.toString())
-                        .document(retryFile)
-                        .caption(plainCaption)
+                        .document(inputFile)
+                        .caption(caption)
+                        .parseMode("HTML")
                         .build();
-                telegramClient.execute(retryDoc);
-            } catch (Exception ex2) {
-                log.error("Failed to send Telegram document {} to chatId {}: {}", fileName, chatId, ex2.getMessage(), ex2);
-                sendMessage(chatId, "❌ Ошибка при отправке файла <b>" + escapeHtml(fileName) + "</b>. Пожалуйста, попробуйте позже.", null);
+                telegramClient.execute(sendDocument);
+            } catch (Exception ex) {
+                log.warn("HTML caption send failed for file {}, retrying plain text: {}", fileName, ex.getMessage());
+                try {
+                    InputFile retryFile = new InputFile(new ByteArrayInputStream(fileBytes), fileName);
+                    String plainCaption = caption.replaceAll("<[^>]*>", "")
+                            .replace("&amp;", "&")
+                            .replace("&lt;", "<")
+                            .replace("&gt;", ">");
+                    SendDocument retryDoc = SendDocument.builder()
+                            .chatId(chatId.toString())
+                            .document(retryFile)
+                            .caption(plainCaption)
+                            .build();
+                    telegramClient.execute(retryDoc);
+                } catch (Exception ex2) {
+                    log.error("Failed to send Telegram document {} to chatId {}: {}", fileName, chatId, ex2.getMessage(), ex2);
+                    sendMessage(chatId, "❌ Ошибка при отправке файла <b>" + escapeHtml(fileName) + "</b>. Пожалуйста, попробуйте позже.", null);
+                }
             }
-        }
+        });
     }
 
     private void handleReportCommand(Long chatId, String text) {
