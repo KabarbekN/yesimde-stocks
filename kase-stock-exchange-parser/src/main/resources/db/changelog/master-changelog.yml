@@ -30,6 +30,9 @@ databaseChangeLog:
   - include:
       file: 10-create-market-reports-tables.sql
       relativeToChangelogFile: true
+  - include:
+      file: 11-create-dividend-table.sql
+      relativeToChangelogFile: true
 
 
 

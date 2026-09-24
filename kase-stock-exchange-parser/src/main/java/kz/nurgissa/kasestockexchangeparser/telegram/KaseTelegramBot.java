@@ -3,6 +3,8 @@ package kz.nurgissa.kasestockexchangeparser.telegram;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.AixInstrumentDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondCalculationDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.DividendItemDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.DividendSummaryDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.InstrumentDetailDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.SubscriberStatsDto;
@@ -77,6 +79,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private final PriceAlertTargetRepository priceAlertTargetRepository;
     private final DatabaseClient databaseClient;
     private final ReportExportService reportExportService;
+    private final kz.nurgissa.kasestockexchangeparser.service.DividendService dividendService;
 
     public KaseTelegramBot(
             @Value("${telegram.bot.token}") String botToken,
@@ -86,7 +89,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             TechnicalAnalysisService technicalAnalysisService,
             PriceAlertTargetRepository priceAlertTargetRepository,
             DatabaseClient databaseClient,
-            ReportExportService reportExportService
+            ReportExportService reportExportService,
+            kz.nurgissa.kasestockexchangeparser.service.DividendService dividendService
     ) {
         this.botToken = botToken;
         this.telegramClient = new OkHttpTelegramClient(botToken);
@@ -97,6 +101,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         this.priceAlertTargetRepository = priceAlertTargetRepository;
         this.databaseClient = databaseClient;
         this.reportExportService = reportExportService;
+        this.dividendService = dividendService;
         log.info("KASE & AIX Telegram Bot initialized successfully.");
     }
 
@@ -116,6 +121,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             List<BotCommand> commands = List.of(
                     BotCommand.builder().command("pulse").description("⚡ Пульс рынка KASE и AIX").build(),
                     BotCommand.builder().command("report").description("📑 Аналитический отчет (PDF / Excel)").build(),
+                    BotCommand.builder().command("dividends").description("💰 Календарь дивидендов KASE").build(),
                     BotCommand.builder().command("ta").description("📊 Теханализ и RSI (напр. /ta KSPI)").build(),
                     BotCommand.builder().command("alert").description("🔔 Поставить лимит-алерт цены").build(),
                     BotCommand.builder().command("my_alerts").description("📋 Мои активные алерты").build(),
@@ -240,6 +246,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             sendTopYields(chatId);
         } else if (text.equals("📈 Акции KASE") || text.startsWith("/stocks")) {
             sendStocks(chatId);
+        } else if (text.equals("💰 Дивиденды") || text.startsWith("/dividends") || text.startsWith("/dividend")) {
+            handleDividendsCommand(chatId, text);
         } else if (text.equals("🏛️ Биржа AIX") || text.startsWith("/aix")) {
             sendAixSummary(chatId);
         } else if (text.equals("⚖️ Арбитраж KASE/AIX") || text.startsWith("/arbitrage") || text.startsWith("/compare")) {
@@ -408,6 +416,11 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             sendStocks(chatId);
         } else if (data.equals("MENU_DISCOUNTS")) {
             sendDiscounts(chatId);
+        } else if (data.equals("DIV_MENU") || data.equals("DIVIDENDS") || data.equals("MENU_DIVIDENDS")) {
+            handleDividendsCommand(chatId, "/dividends");
+        } else if (data.startsWith("DIV_")) {
+            String ticker = data.substring("DIV_".length());
+            handleDividendsCommand(chatId, "/dividend " + ticker);
         } else if (data.equals("MENU_HELP")) {
             sendHelp(chatId);
         } else if (data.startsWith("DEPTH_")) {
@@ -884,13 +897,14 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                     InlineKeyboardMarkup stockKb = InlineKeyboardMarkup.builder()
                             .keyboardRow(new InlineKeyboardRow(
                                     InlineKeyboardButton.builder().text("📈 Теханализ RSI/SMA").callbackData("TA_" + s.getCode()).build(),
-                                    InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + s.getCode()).build()
+                                    InlineKeyboardButton.builder().text("💰 Дивиденды").callbackData("DIV_" + s.getCode()).build()
                             ))
                             .keyboardRow(new InlineKeyboardRow(
-                                    InlineKeyboardButton.builder().text("⚖️ KASE vs AIX").callbackData("COMPARE_" + s.getCode()).build(),
-                                    InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + s.getCode()).build()
+                                    InlineKeyboardButton.builder().text("🔔 Поставить алерт").callbackData("SET_ALERT_" + s.getCode()).build(),
+                                    InlineKeyboardButton.builder().text("⚖️ KASE vs AIX").callbackData("COMPARE_" + s.getCode()).build()
                             ))
                             .keyboardRow(new InlineKeyboardRow(
+                                    InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + s.getCode()).build(),
                                     InlineKeyboardButton.builder().text("🌐 Открыть на KASE").url("https://kase.kz/ru/shares/show/" + s.getCode() + "/").build()
                             ))
                             .build();
@@ -899,6 +913,144 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 .subscribe(null, e -> {
                     log.error("Failed to load stock info for {} (chatId {}): {}", ticker, chatId, e.getMessage());
                     sendMessage(chatId, "⚠️ Не удалось загрузить информацию по акции <code>" + escapeHtml(ticker) + "</code>. Попробуйте позже.", null);
+                });
+    }
+
+    private void handleDividendsCommand(Long chatId, String text) {
+        String[] parts = text.trim().split("\\s+");
+        if (parts.length >= 2) {
+            String ticker = parts[1].toUpperCase();
+            dividendService.getDividendSummaryByTicker(ticker)
+                    .doOnSuccess(summary -> {
+                        if (summary == null || summary.getHistory() == null || summary.getHistory().isEmpty()) {
+                            sendMessage(chatId, "По бумаге <code>" + escapeHtml(ticker) + "</code> нет данных по дивидендам в базе KASE.", null);
+                            return;
+                        }
+
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(String.format("💰 <b>Дивидендный паспорт: %s</b> (<code>%s</code>)\n\n",
+                                escapeHtml(summary.getCompanyName()), summary.getTicker()));
+
+                        if (summary.getCurrentPrice() != null) {
+                            sb.append(String.format("• <b>Текущая цена:</b> %s %s\n",
+                                    formatMoney(summary.getCurrentPrice()), summary.getCurrency()));
+                        }
+                        if (summary.getTrailingTwelveMonthsYieldPercent() != null && summary.getTrailingTwelveMonthsYieldPercent().compareTo(BigDecimal.ZERO) > 0) {
+                            sb.append(String.format("• <b>Дивдоходность LTM:</b> <b>%s%%</b> (выплачено за год: %s %s)\n",
+                                    summary.getTrailingTwelveMonthsYieldPercent().toPlainString(),
+                                    formatMoney(summary.getTotalPaidLastYear()), summary.getCurrency()));
+                        }
+
+                        if (summary.getNextDividend() != null) {
+                            DividendItemDto next = summary.getNextDividend();
+                            String yieldStr = next.getDividendYieldPercent() != null ? String.format(" (доходность ~<b>%.2f%%</b>)", next.getDividendYieldPercent()) : "";
+                            sb.append(String.format("\n⚡ <b>БЛИЖАЙШАЯ ВЫПЛАТА:</b>\n" +
+                                            "  • Размер: <b>%s %s</b> на акцию%s\n" +
+                                            "  • Отсечка (реестр): <b>%s</b> (%s)\n" +
+                                            "  • Период: %s [%s]\n",
+                                    formatMoney(next.getAmountPerShare()), next.getCurrency(), yieldStr,
+                                    next.getRecordDate(),
+                                    next.getDaysUntilRecordDate() != null && next.getDaysUntilRecordDate() >= 0
+                                            ? "через " + next.getDaysUntilRecordDate() + " дн."
+                                            : "реестр зафиксирован",
+                                    next.getPeriod(),
+                                    "APPROVED".equalsIgnoreCase(next.getStatus()) ? "УТВЕРЖДЕН" : "ОБЪЯВЛЕН"
+                            ));
+                        }
+
+                        sb.append("\n📋 <b>История выплат:</b>\n");
+                        int count = 0;
+                        for (DividendItemDto item : summary.getHistory()) {
+                            if (++count > 5) break;
+                            String yld = item.getDividendYieldPercent() != null ? String.format(" (~%.1f%%)", item.getDividendYieldPercent()) : "";
+                            sb.append(String.format("  • %s: <b>%s %s</b>%s (реестр: %s)\n",
+                                    item.getPeriod(), formatMoney(item.getAmountPerShare()), item.getCurrency(),
+                                    yld, item.getRecordDate() != null ? item.getRecordDate() : "—"));
+                        }
+
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + summary.getTicker()).build(),
+                                        InlineKeyboardButton.builder().text("📊 Акция").callbackData("STOCK_" + summary.getTicker()).build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("📅 Весь календарь дивидендов").callbackData("DIV_MENU").build()
+                                ))
+                                .build();
+
+                        sendMessage(chatId, sb.toString(), kb);
+                    })
+                    .subscribe(null, e -> {
+                        log.error("Failed to load dividend summary for {} (chatId {}): {}", ticker, chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Ошибка при загрузке дивидендов по " + escapeHtml(ticker), null);
+                    });
+            return;
+        }
+
+        dividendService.getUpcomingDividends()
+                .doOnSuccess(list -> {
+                    if (list == null || list.isEmpty()) {
+                        sendMessage(chatId, "📅 В данный момент нет активных дивидендных отсечек.", null);
+                        return;
+                    }
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("💰 <b>Дивидендный календарь KASE & AIX</b>\n");
+                    sb.append("Ближайшие даты отсечек (реестров) и утвержденных выплат:\n\n");
+
+                    List<InlineKeyboardButton> quickButtons = new ArrayList<>();
+
+                    for (DividendItemDto d : list) {
+                        String yieldStr = d.getDividendYieldPercent() != null
+                                ? String.format(" • Доходность: <b>~%.2f%%</b>", d.getDividendYieldPercent())
+                                : "";
+                        String statusBadge = "PAID".equalsIgnoreCase(d.getStatus())
+                                ? "✅ Выплачен"
+                                : ("APPROVED".equalsIgnoreCase(d.getStatus()) ? "🟢 Утвержден" : "🟡 Объявлен");
+
+                        String daysStr = d.getDaysUntilRecordDate() != null
+                                ? (d.getDaysUntilRecordDate() >= 0 ? "через " + d.getDaysUntilRecordDate() + " дн." : "прошла")
+                                : "";
+
+                        sb.append(String.format(
+                                "🔹 <b>%s</b> (<code>%s</code>) — <b>%s %s</b> на акцию\n" +
+                                        "   • Отсечка: <b>%s</b> (%s)%s\n" +
+                                        "   • Период: %s [%s]\n\n",
+                                escapeHtml(d.getCompanyName()), d.getTicker(),
+                                formatMoney(d.getAmountPerShare()), d.getCurrency(),
+                                d.getRecordDate(), daysStr, yieldStr,
+                                d.getPeriod(), statusBadge
+                        ));
+
+                        if (quickButtons.size() < 6 && quickButtons.stream().noneMatch(b -> b.getCallbackData().equals("DIV_" + d.getTicker()))) {
+                            quickButtons.add(InlineKeyboardButton.builder()
+                                    .text("💰 " + d.getTicker())
+                                    .callbackData("DIV_" + d.getTicker())
+                                    .build());
+                        }
+                    }
+
+                    sb.append("💡 <i>Нажмите на акцию для детального дивидендного паспорта и истории:</i>");
+
+                    List<InlineKeyboardRow> rows = new ArrayList<>();
+                    if (quickButtons.size() >= 3) {
+                        rows.add(new InlineKeyboardRow(quickButtons.subList(0, 3)));
+                        if (quickButtons.size() > 3) {
+                            rows.add(new InlineKeyboardRow(quickButtons.subList(3, quickButtons.size())));
+                        }
+                    } else if (!quickButtons.isEmpty()) {
+                        rows.add(new InlineKeyboardRow(quickButtons));
+                    }
+
+                    rows.add(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📑 Скачать полный аналитический отчет").callbackData("REPORT_MENU").build()
+                    ));
+
+                    sendMessage(chatId, sb.toString(), InlineKeyboardMarkup.builder().keyboard(rows).build());
+                })
+                .subscribe(null, e -> {
+                    log.error("Failed to load upcoming dividends for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить дивидендный календарь. Попробуйте позже.", null);
                 });
     }
 
@@ -1798,8 +1950,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
         return ReplyKeyboardMarkup.builder()
                 .keyboardRow(new KeyboardRow("⚡ Пульс рынка", "📈 Акции KASE"))
-                .keyboardRow(new KeyboardRow("📉 Скидки (<95%)", "🏆 Топ доходностей"))
-                .keyboardRow(new KeyboardRow("⚖️ Арбитраж KASE/AIX", "🏛️ Биржа AIX"))
+                .keyboardRow(new KeyboardRow("💰 Дивиденды", "🏆 Топ доходностей"))
+                .keyboardRow(new KeyboardRow("📉 Скидки (<95%)", "⚖️ Арбитраж KASE/AIX"))
                 .keyboardRow(new KeyboardRow("📑 Отчеты (PDF/Excel)", "🧮 Калькулятор"))
                 .keyboardRow(new KeyboardRow("🔔 Мои алерты", settingsLabel))
                 .keyboardRow(new KeyboardRow("ℹ️ О боте"))
