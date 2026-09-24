@@ -96,7 +96,7 @@ public class TelegramAlertDispatcherService {
                     String message = buildDiscountMessage(bond);
                     InlineKeyboardMarkup keyboard = buildBondInlineKeyboard(ticker);
                     return subscriberRepository.findAllBySubDiscountsTrue()
-                            .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                            .concatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                             .then();
                 });
     }
@@ -123,7 +123,7 @@ public class TelegramAlertDispatcherService {
                             String message = buildNewBondMessage(bond, ticker);
                             InlineKeyboardMarkup keyboard = buildNewBondInlineKeyboard(bond, ticker);
                             return subscriberRepository.findAllBySubNewBondsTrue()
-                                    .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                                    .concatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                                     .then(Mono.empty());
                         })
                 )
@@ -156,7 +156,7 @@ public class TelegramAlertDispatcherService {
                             String message = buildBondTermsUpdatedMessage(bond, ticker);
                             InlineKeyboardMarkup keyboard = buildBondTermsUpdatedKeyboard(code);
                             return subscriberRepository.findAllBySubNewBondsTrue()
-                                    .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                                    .concatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                                     .then(Mono.empty());
                         })
                 )
@@ -203,7 +203,7 @@ public class TelegramAlertDispatcherService {
                     String message = buildWhaleMessage(ticker, name, volKzt, price);
                     InlineKeyboardMarkup keyboard = buildBondInlineKeyboard(ticker);
                     return subscriberRepository.findAllBySubWhalesTrue()
-                            .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
+                            .concatMap(sub -> sendHtmlMessage(sub.getChatId(), message, keyboard))
                             .then();
                 });
     }
@@ -306,7 +306,7 @@ public class TelegramAlertDispatcherService {
 
         String message = buildWeeklyCouponMessage(upcomingBonds);
         return subscriberRepository.findAllBySubCouponsTrue()
-                .flatMap(sub -> sendHtmlMessage(sub.getChatId(), message, null))
+                .concatMap(sub -> sendHtmlMessage(sub.getChatId(), message, null))
                 .then();
     }
 

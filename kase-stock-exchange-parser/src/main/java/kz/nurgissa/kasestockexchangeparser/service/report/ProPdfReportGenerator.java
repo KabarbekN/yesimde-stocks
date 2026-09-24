@@ -98,7 +98,7 @@ public class ProPdfReportGenerator {
                 : "2.13 трлн ₸";
 
         addKpiCell(kpiTable, "Оборот акций (2022–26)", totalTurnoverStr, "2 127.8 млрд ₸ оборот", ACCENT_BLUE);
-        addKpiCell(kpiTable, "Всего сделок (Акции)", m != null ? String.format("%,d", m.getTotalEquitiesDeals()).replace(',', ' ') : "8 423 997", "28% сделок в HSBK", ACCENT_EMERALD);
+        addKpiCell(kpiTable, "Всего сделок (Акции)", m != null ? String.format(java.util.Locale.US, "%,d", m.getTotalEquitiesDeals()).replace(',', ' ') : "8 423 997", "28% сделок в HSBK", ACCENT_EMERALD);
         addKpiCell(kpiTable, "Концентрация Top-3", (m != null ? m.getTop3ConcentrationPct() : "35.2") + "%", "KMGZ + HSBK + KZTK", ACCENT_AMBER);
         addKpiCell(kpiTable, "Базовая ставка НБ РК", (m != null ? m.getBaseRate() : "16.25") + "%", "Инфляция: 8.6% годовых", TEXT_DARK);
         doc.add(kpiTable);
@@ -553,8 +553,8 @@ public class ProPdfReportGenerator {
                 ArbitrageItemDto a = arbList.get(i);
                 String kaseP = formatPrice(a.getKasePrice(), a.getCurrency());
                 String aixP = formatPrice(a.getAixPrice(), a.getCurrency());
-                String spreadP = (a.getSpreadAbs() != null ? String.format("%,.2f ₸", a.getSpreadAbs().doubleValue()).replace(',', ' ') : "—");
-                String spreadPct = (a.getSpreadPercent() != null ? String.format("%.2f%%", a.getSpreadPercent().doubleValue()) : "—");
+                String spreadP = (a.getSpreadAbs() != null ? String.format(java.util.Locale.US, "%,.2f ₸", a.getSpreadAbs().doubleValue()).replace(',', ' ') : "—");
+                String spreadPct = (a.getSpreadPercent() != null ? String.format(java.util.Locale.US, "%.2f%%", a.getSpreadPercent().doubleValue()) : "—");
                 String recClean = cleanRecommendation(a.getRecommendation());
                 addTableRow(aTable, a.getCompanyName(), kaseP, aixP, spreadP, spreadPct, recClean);
             }
@@ -829,9 +829,9 @@ public class ProPdfReportGenerator {
         else if ("KZT".equalsIgnoreCase(curr)) curr = "₸";
 
         if (price.remainder(BigDecimal.ONE).compareTo(BigDecimal.ZERO) == 0) {
-            return String.format("%,d %s", price.setScale(0, RoundingMode.HALF_UP).longValue(), curr).replace(',', ' ');
+            return String.format(java.util.Locale.US, "%,d %s", price.setScale(0, RoundingMode.HALF_UP).longValue(), curr).replace(',', ' ');
         } else {
-            return String.format("%,.2f %s", price.doubleValue(), curr).replace(',', ' ').replace('.', ',');
+            return String.format(java.util.Locale.US, "%,.2f %s", price.doubleValue(), curr).replace(',', ' ').replace('.', ',');
         }
     }
 
@@ -854,6 +854,6 @@ public class ProPdfReportGenerator {
 
     private String formatKzt(BigDecimal amount) {
         if (amount == null) return "0 ₸";
-        return String.format("%,d ₸", amount.setScale(0, RoundingMode.HALF_UP).longValue()).replace(',', ' ');
+        return String.format(java.util.Locale.US, "%,d ₸", amount.setScale(0, RoundingMode.HALF_UP).longValue()).replace(',', ' ');
     }
 }

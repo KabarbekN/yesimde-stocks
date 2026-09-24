@@ -8,9 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.awt.Color;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 
 @Slf4j
 @Component
@@ -24,55 +21,55 @@ public class ReportFontProvider {
     }
 
     private void initFonts() {
-        try {
-            // Try loading from classpath resources
-            ClassPathResource regRes = new ClassPathResource("fonts/arial.ttf");
-            ClassPathResource boldRes = new ClassPathResource("fonts/arialbd.ttf");
+        // Load from classpath using byte arrays — no temp files, works in Docker
+        regularBaseFont = loadFontFromClasspath("fonts/arial.ttf");
+        boldBaseFont = loadFontFromClasspath("fonts/arialbd.ttf");
 
-            if (regRes.exists()) {
-                Path tempReg = Files.createTempFile("kase_arial_", ".ttf");
-                tempReg.toFile().deleteOnExit();
-                try (InputStream is = regRes.getInputStream()) {
-                    Files.copy(is, tempReg, StandardCopyOption.REPLACE_EXISTING);
-                }
-                regularBaseFont = BaseFont.createFont(tempReg.toString(), BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
-            }
-
-            if (boldRes.exists()) {
-                Path tempBold = Files.createTempFile("kase_arialbd_", ".ttf");
-                tempBold.toFile().deleteOnExit();
-                try (InputStream is = boldRes.getInputStream()) {
-                    Files.copy(is, tempBold, StandardCopyOption.REPLACE_EXISTING);
-                }
-                boldBaseFont = BaseFont.createFont(tempBold.toString(), BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
-            }
-        } catch (Exception e) {
-            log.warn("Could not load bundled TrueType fonts, falling back to system fonts: {}", e.getMessage());
+        // Fallback: DejaVu Sans is installed via apk in Dockerfile and supports Cyrillic/Kazakh
+        if (regularBaseFont == null) {
+            regularBaseFont = loadFontFromPath("/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf");
+        }
+        if (boldBaseFont == null) {
+            boldBaseFont = loadFontFromPath("/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf");
         }
 
-        // Fallbacks
+        // Final fallback: Helvetica (limited charset — no Kazakh chars)
         if (regularBaseFont == null) {
             try {
-                if (Files.exists(Path.of("C:/Windows/Fonts/arial.ttf"))) {
-                    regularBaseFont = BaseFont.createFont("C:/Windows/Fonts/arial.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
-                } else {
-                    regularBaseFont = BaseFont.createFont(BaseFont.HELVETICA, "Cp1251", BaseFont.NOT_EMBEDDED);
-                }
+                regularBaseFont = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
+                log.warn("Using Helvetica fallback — Kazakh characters (Ә, Ғ, Қ, ₸) will not render");
             } catch (Exception ex) {
-                log.error("Fatal: failed to create base font: {}", ex.getMessage());
+                log.error("Fatal: failed to create any base font: {}", ex.getMessage());
             }
         }
 
         if (boldBaseFont == null) {
-            try {
-                if (Files.exists(Path.of("C:/Windows/Fonts/arialbd.ttf"))) {
-                    boldBaseFont = BaseFont.createFont("C:/Windows/Fonts/arialbd.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
-                } else {
-                    boldBaseFont = regularBaseFont;
-                }
-            } catch (Exception ex) {
-                boldBaseFont = regularBaseFont;
+            boldBaseFont = regularBaseFont;
+        }
+    }
+
+    private BaseFont loadFontFromClasspath(String path) {
+        try {
+            ClassPathResource res = new ClassPathResource(path);
+            if (!res.exists()) return null;
+            try (InputStream is = res.getInputStream()) {
+                byte[] fontBytes = is.readAllBytes();
+                return BaseFont.createFont(path, BaseFont.IDENTITY_H, BaseFont.EMBEDDED, true, fontBytes, null);
             }
+        } catch (Exception e) {
+            log.warn("Could not load font from classpath '{}': {}", path, e.getMessage());
+            return null;
+        }
+    }
+
+    private BaseFont loadFontFromPath(String absolutePath) {
+        try {
+            java.io.File f = new java.io.File(absolutePath);
+            if (!f.exists()) return null;
+            return BaseFont.createFont(absolutePath, BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
+        } catch (Exception e) {
+            log.warn("Could not load font from path '{}': {}", absolutePath, e.getMessage());
+            return null;
         }
     }
 

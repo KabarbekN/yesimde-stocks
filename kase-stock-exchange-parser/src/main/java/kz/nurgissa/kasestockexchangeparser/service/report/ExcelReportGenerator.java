@@ -341,11 +341,11 @@ public class ExcelReportGenerator {
 
         if (snapshot.getMacro() != null) {
             ReportMarketSnapshotDto.MacroReportStatsDto m = snapshot.getMacro();
-            addMacroRow(sheet, r++, "Совокупный оборот рынка акций (2022–2026)", m.getTotalEquitiesTurnoverKzt().doubleValue(), currencyStyle, "Биржа KASE (Официальные отчеты)");
-            addMacroRow(sheet, r++, "Всего сделок в секции акций", (double) m.getTotalEquitiesDeals(), currencyStyle, "Биржа KASE");
-            addMacroRow(sheet, r++, "Концентрация ликвидности Top-3", m.getTop3ConcentrationPct().doubleValue() / 100.0, percentStyle, "KMGZ + HSBK + KZTK");
-            addMacroRow(sheet, r++, "Базовая ставка Национального Банка РК", m.getBaseRate().doubleValue() / 100.0, percentStyle, "НБ РК (сентябрь 2026)");
-            addMacroRow(sheet, r++, "Годовая инфляция", m.getInflationRate().doubleValue() / 100.0, percentStyle, "БНС АСПиР РК");
+            addMacroRow(sheet, r++, "Совокупный оборот рынка акций (2022–2026)", m.getTotalEquitiesTurnoverKzt() != null ? m.getTotalEquitiesTurnoverKzt().doubleValue() : 0.0, currencyStyle, "Биржа KASE (Официальные отчеты)");
+            addMacroRow(sheet, r++, "Всего сделок в секции акций", m.getTotalEquitiesDeals() != null ? m.getTotalEquitiesDeals().doubleValue() : 0.0, currencyStyle, "Биржа KASE");
+            addMacroRow(sheet, r++, "Концентрация ликвидности Top-3", m.getTop3ConcentrationPct() != null ? m.getTop3ConcentrationPct().doubleValue() / 100.0 : 0.0, percentStyle, "KMGZ + HSBK + KZTK");
+            addMacroRow(sheet, r++, "Базовая ставка Национального Банка РК", m.getBaseRate() != null ? m.getBaseRate().doubleValue() / 100.0 : 0.0, percentStyle, "НБ РК (сентябрь 2026)");
+            addMacroRow(sheet, r++, "Годовая инфляция", m.getInflationRate() != null ? m.getInflationRate().doubleValue() / 100.0 : 0.0, percentStyle, "БНС АСПиР РК");
         }
 
         sheet.createRow(r++); // Empty spacer
@@ -353,26 +353,26 @@ public class ExcelReportGenerator {
         if (snapshot.getBattle() != null) {
             ReportMarketSnapshotDto.AssetBattleComparisonDto b = snapshot.getBattle();
             Row battleTitle = sheet.createRow(r++);
-            battleTitle.createCell(0).setCellValue("СРАВНЕНИЕ ДОХОДНОСТЕЙ НА КАПИТАЛ: " + b.getCapitalAmount() + " ₸");
+            battleTitle.createCell(0).setCellValue("СРАВНЕНИЕ ДОХОДНОСТЕЙ НА КАПИТАЛ: " + (b.getCapitalAmount() != null ? b.getCapitalAmount() : "26 500 000") + " ₸");
             battleTitle.getCell(0).setCellStyle(boldStyle);
 
             Row b1 = sheet.createRow(r++);
             b1.createCell(0).setCellValue("1. Квазигос-облигации KASE (Отбасы/БРК/Самрук)");
-            b1.createCell(1).setCellValue(b.getBondYield().doubleValue() / 100.0);
+            b1.createCell(1).setCellValue(b.getBondYield() != null ? b.getBondYield().doubleValue() / 100.0 : 0.0);
             b1.getCell(1).setCellStyle(percentStyle);
-            b1.createCell(2).setCellValue("+" + b.getBondAnnualIncome() + " ₸/год чистыми (ИПН 0%, фиксация на 3-5 лет)");
+            b1.createCell(2).setCellValue("+" + (b.getBondAnnualIncome() != null ? b.getBondAnnualIncome() : "0") + " ₸/год чистыми (ИПН 0%, фиксация на 3-5 лет)");
 
             Row b2 = sheet.createRow(r++);
             b2.createCell(0).setCellValue("2. Банковский депозит (Kaspi/Halyk ГЭСВ)");
-            b2.createCell(1).setCellValue(b.getDepositRate().doubleValue() / 100.0);
+            b2.createCell(1).setCellValue(b.getDepositRate() != null ? b.getDepositRate().doubleValue() / 100.0 : 0.0);
             b2.getCell(1).setCellStyle(percentStyle);
-            b2.createCell(2).setCellValue("+" + b.getDepositAnnualIncome() + " ₸/год (Лимит КФГД 10-20 млн ₸)");
+            b2.createCell(2).setCellValue("+" + (b.getDepositAnnualIncome() != null ? b.getDepositAnnualIncome() : "0") + " ₸/год (Лимит КФГД 10-20 млн ₸)");
 
             Row b3 = sheet.createRow(r++);
             b3.createCell(0).setCellValue("3. 1-комн. квартира в Алматы (аренда Krisha.kz)");
-            b3.createCell(1).setCellValue(b.getRealEstateNetYield().doubleValue() / 100.0);
+            b3.createCell(1).setCellValue(b.getRealEstateNetYield() != null ? b.getRealEstateNetYield().doubleValue() / 100.0 : 0.0);
             b3.getCell(1).setCellStyle(percentStyle);
-            b3.createCell(2).setCellValue("+" + b.getRealEstateNetAnnualIncome() + " ₸/год (Чистыми за вычетом простоя и ремонта)");
+            b3.createCell(2).setCellValue("+" + (b.getRealEstateNetAnnualIncome() != null ? b.getRealEstateNetAnnualIncome() : "0") + " ₸/год (Чистыми за вычетом простоя и ремонта)");
         }
 
         sheet.setColumnWidth(0, 11000);

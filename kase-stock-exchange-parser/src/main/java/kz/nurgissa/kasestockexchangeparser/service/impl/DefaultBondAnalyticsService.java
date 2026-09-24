@@ -75,26 +75,31 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
               AND (COALESCE(s.dtm, 0) > 0 OR COALESCE(t.finish_date, s.repayment_start_date) >= CURRENT_DATE)
         """);
 
+        Map<String, Object> params = new LinkedHashMap<>();
+
         if (currency != null && !currency.isBlank()) {
-            sql.append(" AND COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') = '").append(currency.replace("'", "")).append("'");
+            sql.append(" AND COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') = :currency");
+            params.put("currency", currency.trim());
         }
         if (minYtm != null) {
-            sql.append(" AND ").append(EFFECTIVE_YIELD_SQL).append(" >= ").append(minYtm);
+            sql.append(" AND ").append(EFFECTIVE_YIELD_SQL).append(" >= :minYtm");
+            params.put("minYtm", minYtm);
         }
         if (maxYtm != null) {
-            sql.append(" AND ").append(EFFECTIVE_YIELD_SQL).append(" <= ").append(maxYtm);
+            sql.append(" AND ").append(EFFECTIVE_YIELD_SQL).append(" <= :maxYtm");
+            params.put("maxYtm", maxYtm);
         }
         if (minDtm != null) {
-            sql.append(" AND s.dtm >= ").append(minDtm);
+            sql.append(" AND s.dtm >= :minDtm");
+            params.put("minDtm", minDtm);
         }
         if (maxDtm != null) {
-            sql.append(" AND s.dtm <= ").append(maxDtm);
+            sql.append(" AND s.dtm <= :maxDtm");
+            params.put("maxDtm", maxDtm);
         }
         if (search != null && !search.isBlank()) {
-            String safeSearch = search.replace("'", "").toLowerCase();
-            sql.append(" AND (LOWER(s.code) LIKE '%").append(safeSearch)
-               .append("%' OR LOWER(s.org_name_ru) LIKE '%").append(safeSearch)
-               .append("%' OR LOWER(s.org_short_name_ru) LIKE '%").append(safeSearch).append("%')");
+            sql.append(" AND (LOWER(s.code) LIKE :searchPattern OR LOWER(s.org_name_ru) LIKE :searchPattern OR LOWER(s.org_short_name_ru) LIKE :searchPattern)");
+            params.put("searchPattern", "%" + search.trim().toLowerCase() + "%");
         }
 
         // Presets logic
@@ -130,7 +135,12 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
         int off = (offset != null && offset >= 0) ? offset : 0;
         sql.append(" LIMIT ").append(lim).append(" OFFSET ").append(off);
 
-        return databaseClient.sql(sql.toString())
+        var spec = databaseClient.sql(sql.toString());
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            spec = spec.bind(entry.getKey(), entry.getValue());
+        }
+        return spec
+
                 .map((row, metadata) -> {
                     BigDecimal bestBid = row.get("best_bid", BigDecimal.class);
                     BigDecimal bestOffer = row.get("best_offer", BigDecimal.class);
@@ -218,7 +228,7 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
             LEFT JOIN ticker t ON s.id = t.security_instrument_id
             WHERE s.sec_type IN ('gsec', 'bond')
               AND s.dtm IS NOT NULL AND s.dtm > 0 AND s.dtm <= 10950
-              AND COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') = '%s'
+              AND COALESCE(NULLIF(t.currency, ''), NULLIF(s.currency_type, ''), 'KZT') = :currParam
               AND (
                   (s.sec_type = 'gsec' AND s.dohod >= 8.0) OR
                   (s.sec_type = 'bond' AND (
@@ -228,9 +238,10 @@ public class DefaultBondAnalyticsService implements BondAnalyticsService {
                   ))
               )
             ORDER BY s.dtm ASC
-        """.formatted(curr);
+        """;
 
         return databaseClient.sql(sql)
+                .bind("currParam", curr)
                 .map((row, metadata) -> {
                     BigDecimal bestBid = row.get("best_bid", BigDecimal.class);
                     BigDecimal bestOffer = row.get("best_offer", BigDecimal.class);

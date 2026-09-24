@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class DefaultSecurityInstrumentService implements SecurityInstrumentService {
 
-    private static final int PARALLELISM = 64;
+    private static final int PARALLELISM = 10;
 
     private final MarketMakerRepository marketMakerRepository;
     private final SecurityInstrumentRepository securityInstrumentRepository;
@@ -40,6 +40,7 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
     private final kz.nurgissa.kasestockexchangeparser.telegram.TelegramAlertDispatcherService alertDispatcherService;
 
     private final ConcurrentHashMap<Long, PriceSnapshot> lastRecordedSnapshots = new ConcurrentHashMap<>();
+    private volatile boolean initialSeedCompleted = false;
 
     private record PriceSnapshot(BigDecimal price, BigDecimal bid, BigDecimal offer, BigDecimal volKzt, LocalDateTime timestamp) {}
 
@@ -120,7 +121,13 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
     public Mono<Void> fetchAndSaveAll() {
         return kaseClient.fetchAllSecurityInstruments()
                 .transform(this::saveAll)
-                .then();
+                .then()
+                .doOnSuccess(v -> {
+                    if (!initialSeedCompleted) {
+                        initialSeedCompleted = true;
+                        log.info("Initial seed completed — new bond alerts are now active");
+                    }
+                });
     }
 
     private Mono<Void> upsertInstrument(SecurityInstrumentEntity instrument) {
@@ -130,12 +137,13 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
                         return securityInstrumentRepository.save(instrument).then();
                     } else {
                         Mono<Void> insert = template.insert(SecurityInstrumentEntity.class).using(instrument).then();
-                        if (("bond".equalsIgnoreCase(instrument.getSecType()) || "gsec".equalsIgnoreCase(instrument.getSecType()))
+                        if (initialSeedCompleted
+                                && ("bond".equalsIgnoreCase(instrument.getSecType()) || "gsec".equalsIgnoreCase(instrument.getSecType()))
                                 && alertDispatcherService.isEnabled()) {
                             return insert.then(
                                     tickerRepository.findById(instrument.getId())
                                             .flatMap(t -> alertDispatcherService.broadcastNewBondAlert(instrument, t))
-                                            .switchIfEmpty(alertDispatcherService.broadcastNewBondAlert(instrument, null))
+                                            .switchIfEmpty(Mono.defer(() -> alertDispatcherService.broadcastNewBondAlert(instrument, null)))
                             );
                         }
                         return insert;
@@ -143,6 +151,7 @@ public class DefaultSecurityInstrumentService implements SecurityInstrumentServi
                 })
                 .onErrorResume(DuplicateKeyException.class, ex -> Mono.empty());
     }
+
 
     private Mono<Void> upsertMarketMaker(MarketMakerEntity maker) {
         return marketMakerRepository.existsById(maker.getOrgCode())

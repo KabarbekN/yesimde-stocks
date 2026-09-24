@@ -150,6 +150,8 @@ public class DefaultAixService implements AixService {
             WHERE 1=1
         """);
 
+        java.util.Map<String, Object> params = new java.util.LinkedHashMap<>();
+
         if (assetClass != null && !assetClass.isBlank()) {
             String ac = assetClass.trim().toLowerCase();
             if (ac.contains("eq") || ac.contains("stock") || ac.contains("share")) {
@@ -159,23 +161,29 @@ public class DefaultAixService implements AixService {
             } else if (ac.contains("etf") || ac.contains("etn")) {
                 sql.append(" AND (asset_class IN ('ETF', 'ETN') OR security_group = 'ETF' OR segment = 'ETF' OR nav IS NOT NULL)");
             } else {
-                sql.append(" AND asset_class = '").append(assetClass.replace("'", "")).append("'");
+                sql.append(" AND asset_class = :assetClass");
+                params.put("assetClass", assetClass.trim());
             }
         }
         if (currency != null && !currency.isBlank()) {
-            sql.append(" AND currency = '").append(currency.replace("'", "")).append("'");
+            sql.append(" AND currency = :currency");
+            params.put("currency", currency.trim().toUpperCase());
         }
         if (search != null && !search.isBlank()) {
-            String q = search.replace("'", "").toLowerCase();
-            sql.append(" AND (LOWER(sec_code) LIKE '%").append(q).append("%' OR LOWER(issuer) LIKE '%").append(q).append("%' OR LOWER(isin) LIKE '%").append(q).append("%')");
+            String q = "%" + search.trim().toLowerCase() + "%";
+            sql.append(" AND (LOWER(sec_code) LIKE :search OR LOWER(issuer) LIKE :search OR LOWER(isin) LIKE :search)");
+            params.put("search", q);
         }
 
         sql.append(" ORDER BY COALESCE(value, volume, 0) DESC, sec_code ASC");
         int max = (limit != null && limit > 0) ? Math.min(limit, 500) : 100;
         sql.append(" LIMIT ").append(max);
 
-        return databaseClient.sql(sql.toString())
-                .map((row, meta) -> AixInstrumentDto.builder()
+        var spec = databaseClient.sql(sql.toString());
+        for (var entry : params.entrySet()) {
+            spec = spec.bind(entry.getKey(), entry.getValue());
+        }
+        return spec.map((row, meta) -> AixInstrumentDto.builder()
                         .secCode(row.get("sec_code", String.class))
                         .isin(row.get("isin", String.class))
                         .issuer(row.get("issuer", String.class))
@@ -291,7 +299,7 @@ public class DefaultAixService implements AixService {
         }
         String target = tickerOrIsin.trim().toUpperCase();
         return getArbitrageOpportunities()
-                .map(list -> list.stream()
+                .flatMap(list -> Mono.justOrEmpty(list.stream()
                         .filter(item -> target.equalsIgnoreCase(item.getKaseCode())
                                 || target.equalsIgnoreCase(item.getAixCode())
                                 || target.equalsIgnoreCase(item.getIsin())
@@ -299,7 +307,6 @@ public class DefaultAixService implements AixService {
                                 || (target.equals("KAP") && "KZAP".equalsIgnoreCase(item.getKaseCode()))
                         )
                         .findFirst()
-                        .orElse(null)
-                );
+                ));
     }
 }
