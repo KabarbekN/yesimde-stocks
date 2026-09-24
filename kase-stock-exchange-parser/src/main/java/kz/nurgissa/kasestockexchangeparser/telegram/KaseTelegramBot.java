@@ -6,6 +6,8 @@ import kz.nurgissa.kasestockexchangeparser.model.dtos.BondItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.DividendItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.DividendSummaryDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.InstrumentDetailDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.PortfolioPositionDto;
+import kz.nurgissa.kasestockexchangeparser.model.dtos.PortfolioSummaryDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.StockItemDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.SubscriberStatsDto;
 import kz.nurgissa.kasestockexchangeparser.model.dtos.TechnicalAnalysisDto;
@@ -80,6 +82,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
     private final DatabaseClient databaseClient;
     private final ReportExportService reportExportService;
     private final kz.nurgissa.kasestockexchangeparser.service.DividendService dividendService;
+    private final kz.nurgissa.kasestockexchangeparser.service.PortfolioService portfolioService;
 
     public KaseTelegramBot(
             @Value("${telegram.bot.token}") String botToken,
@@ -90,7 +93,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             PriceAlertTargetRepository priceAlertTargetRepository,
             DatabaseClient databaseClient,
             ReportExportService reportExportService,
-            kz.nurgissa.kasestockexchangeparser.service.DividendService dividendService
+            kz.nurgissa.kasestockexchangeparser.service.DividendService dividendService,
+            kz.nurgissa.kasestockexchangeparser.service.PortfolioService portfolioService
     ) {
         this.botToken = botToken;
         this.telegramClient = new OkHttpTelegramClient(botToken);
@@ -102,6 +106,7 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         this.databaseClient = databaseClient;
         this.reportExportService = reportExportService;
         this.dividendService = dividendService;
+        this.portfolioService = portfolioService;
         log.info("KASE & AIX Telegram Bot initialized successfully.");
     }
 
@@ -120,8 +125,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         try {
             List<BotCommand> commands = List.of(
                     BotCommand.builder().command("pulse").description("⚡ Пульс рынка KASE и AIX").build(),
-                    BotCommand.builder().command("report").description("📑 Аналитический отчет (PDF / Excel)").build(),
+                    BotCommand.builder().command("portfolio").description("💼 Мой портфель и доходность (P&L)").build(),
                     BotCommand.builder().command("dividends").description("💰 Календарь дивидендов KASE").build(),
+                    BotCommand.builder().command("report").description("📑 Аналитический отчет (PDF / Excel)").build(),
                     BotCommand.builder().command("ta").description("📊 Теханализ и RSI (напр. /ta KSPI)").build(),
                     BotCommand.builder().command("alert").description("🔔 Поставить лимит-алерт цены").build(),
                     BotCommand.builder().command("my_alerts").description("📋 Мои активные алерты").build(),
@@ -248,6 +254,8 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
             sendStocks(chatId);
         } else if (text.equals("💰 Дивиденды") || text.startsWith("/dividends") || text.startsWith("/dividend")) {
             handleDividendsCommand(chatId, text);
+        } else if (text.equals("💼 Мой портфель") || text.startsWith("/portfolio") || text.startsWith("/port")) {
+            handlePortfolioCommand(chatId, text);
         } else if (text.equals("🏛️ Биржа AIX") || text.startsWith("/aix")) {
             sendAixSummary(chatId);
         } else if (text.equals("⚖️ Арбитраж KASE/AIX") || text.startsWith("/arbitrage") || text.startsWith("/compare")) {
@@ -421,6 +429,19 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
         } else if (data.startsWith("DIV_")) {
             String ticker = data.substring("DIV_".length());
             handleDividendsCommand(chatId, "/dividend " + ticker);
+        } else if (data.equals("PORTFOLIO") || data.equals("MENU_PORTFOLIO")) {
+            handlePortfolioCommand(chatId, "/portfolio");
+        } else if (data.startsWith("PORTFOLIO_DEL_")) {
+            String ticker = data.substring("PORTFOLIO_DEL_".length());
+            handlePortfolioCommand(chatId, "/portfolio del " + ticker);
+        } else if (data.equals("PORTFOLIO_CLEAR")) {
+            handlePortfolioCommand(chatId, "/portfolio clear");
+        } else if (data.startsWith("PORTFOLIO_ADD_")) {
+            String ticker = data.substring("PORTFOLIO_ADD_".length());
+            sendMessage(chatId, "💼 Чтобы добавить <b>" + escapeHtml(ticker) + "</b> в портфель, отправьте команду:\n" +
+                    "<pre>/portfolio add " + ticker + " КОЛИЧЕСТВО ЦЕНА_ПОКУПКИ</pre>\n\n" +
+                    "<i>Пример:</i>\n" +
+                    "<pre>/portfolio add " + ticker + " 100</pre>", null);
         } else if (data.equals("MENU_HELP")) {
             sendHelp(chatId);
         } else if (data.startsWith("DEPTH_")) {
@@ -905,6 +926,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                             ))
                             .keyboardRow(new InlineKeyboardRow(
                                     InlineKeyboardButton.builder().text("⭐ В вотчлист").callbackData("TRACK_" + s.getCode()).build(),
+                                    InlineKeyboardButton.builder().text("💼 В портфель").callbackData("PORTFOLIO_ADD_" + s.getCode()).build()
+                            ))
+                            .keyboardRow(new InlineKeyboardRow(
                                     InlineKeyboardButton.builder().text("🌐 Открыть на KASE").url("https://kase.kz/ru/shares/show/" + s.getCode() + "/").build()
                             ))
                             .build();
@@ -1051,6 +1075,240 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 .subscribe(null, e -> {
                     log.error("Failed to load upcoming dividends for chatId {}: {}", chatId, e.getMessage());
                     sendMessage(chatId, "⚠️ Не удалось загрузить дивидендный календарь. Попробуйте позже.", null);
+                });
+    }
+
+    private void handlePortfolioCommand(Long chatId, String text) {
+        String trimmed = (text != null) ? text.trim() : "";
+        String[] parts = trimmed.split("\\s+");
+
+        if (parts.length >= 2 && "help".equalsIgnoreCase(parts[1])) {
+            sendMessage(chatId,
+                    "💼 <b>Управление инвестиционным портфелем:</b>\n\n" +
+                    "• <code>/portfolio</code> — просмотр вашего портфеля, доходности и дивидендов\n" +
+                    "• <code>/portfolio add ТИКЕР КОЛИЧЕСТВО [ЦЕНА]</code> — добавить или обновить акцию\n" +
+                    "• <code>/portfolio del ТИКЕР</code> — удалить акцию из портфеля\n" +
+                    "• <code>/portfolio clear</code> — полностью очистить портфель\n\n" +
+                    "<i>Примеры:</i>\n" +
+                    "• <code>/portfolio add HSBK 100 240.50</code>\n" +
+                    "• <code>/portfolio add KZAP 50</code> <i>(цена покупки подставится по текущему рынку)</i>\n" +
+                    "• <code>/portfolio del HSBK</code>", null);
+            return;
+        }
+
+        if (parts.length >= 2 && ("add".equalsIgnoreCase(parts[1]) || "+".equals(parts[1]))) {
+            if (parts.length < 4) {
+                sendMessage(chatId,
+                        "⚠️ <b>Формат добавления акции:</b>\n" +
+                        "<code>/portfolio add ТИКЕР КОЛИЧЕСТВО [ЦЕНА_ПОКУПКИ]</code>\n\n" +
+                        "<i>Примеры:</i>\n" +
+                        "• <code>/portfolio add HSBK 100 240</code>\n" +
+                        "• <code>/portfolio add KZAP 50</code> <i>(цена покупки определится по текущему рынку)</i>", null);
+                return;
+            }
+
+            String ticker = parts[2].trim().toUpperCase();
+            BigDecimal qty;
+            try {
+                qty = new BigDecimal(parts[3].replace(",", "."));
+                if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+                    sendMessage(chatId, "⚠️ Количество акций должно быть больше нуля.", null);
+                    return;
+                }
+            } catch (Exception e) {
+                sendMessage(chatId, "⚠️ Неверный формат количества: " + escapeHtml(parts[3]), null);
+                return;
+            }
+
+            BigDecimal buyPrice = null;
+            if (parts.length >= 5) {
+                try {
+                    buyPrice = new BigDecimal(parts[4].replace(",", "."));
+                    if (buyPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                        sendMessage(chatId, "⚠️ Цена покупки должна быть больше нуля.", null);
+                        return;
+                    }
+                } catch (Exception e) {
+                    sendMessage(chatId, "⚠️ Неверный формат цены покупки: " + escapeHtml(parts[4]), null);
+                    return;
+                }
+            }
+
+            portfolioService.addOrUpdatePosition(chatId, ticker, qty, buyPrice)
+                    .doOnSuccess(pos -> {
+                        String sign = pos.getUnrealizedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
+                        String badge = pos.getUnrealizedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "🟢" : "🔴";
+                        String msg = String.format(
+                                "✅ <b>%s</b> успешно сохранена в портфель!\n\n" +
+                                "📦 Количество: <b>%s шт.</b>\n" +
+                                "💵 Цена покупки: <b>%s %s</b>\n" +
+                                "📊 Текущая цена: <b>%s %s</b>\n" +
+                                "💰 Общая стоимость: <b>%s %s</b>\n" +
+                                "📈 P&amp;L: <b>%s%s %s (%s%.2f%%)</b> %s\n" +
+                                "🎯 Див. доходность на вложенное (YOC): <b>~%.2f%%</b>",
+                                escapeHtml(pos.getTicker()),
+                                pos.getQuantity().stripTrailingZeros().toPlainString(),
+                                formatMoney(pos.getBuyPrice()), pos.getCurrency(),
+                                formatMoney(pos.getCurrentPrice()), pos.getCurrency(),
+                                formatMoney(pos.getCurrentValue()), pos.getCurrency(),
+                                sign, formatMoney(pos.getUnrealizedPnl()), pos.getCurrency(),
+                                sign, pos.getUnrealizedPnlPercent(), badge,
+                                pos.getDividendYieldOnCost() != null ? pos.getDividendYieldOnCost() : BigDecimal.ZERO
+                        );
+
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("💼 Мой портфель").callbackData("PORTFOLIO").build(),
+                                        InlineKeyboardButton.builder().text("📊 Акция " + pos.getTicker()).callbackData("TRACK_" + pos.getTicker()).build()
+                                ))
+                                .build();
+
+                        sendMessage(chatId, msg, kb);
+                    })
+                    .subscribe(null, e -> {
+                        log.error("Failed to add position for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Ошибка при добавлении в портфель: " + escapeHtml(e.getMessage()), null);
+                    });
+            return;
+        }
+
+        if (parts.length >= 2 && ("del".equalsIgnoreCase(parts[1]) || "delete".equalsIgnoreCase(parts[1]) || "remove".equalsIgnoreCase(parts[1]) || "-".equals(parts[1]))) {
+            if (parts.length < 3) {
+                sendMessage(chatId, "⚠️ Укажите тикер для удаления: <code>/portfolio del ТИКЕР</code>", null);
+                return;
+            }
+            String ticker = parts[2].trim().toUpperCase();
+            portfolioService.removePosition(chatId, ticker)
+                    .doOnSuccess(v -> {
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("💼 Мой портфель").callbackData("PORTFOLIO").build()
+                                ))
+                                .build();
+                        sendMessage(chatId, "🗑 Позиция <b>" + escapeHtml(ticker) + "</b> удалена из вашего портфеля.", kb);
+                    })
+                    .subscribe(null, e -> {
+                        log.error("Failed to delete position for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Ошибка при удалении позиции.", null);
+                    });
+            return;
+        }
+
+        if (parts.length >= 2 && ("clear".equalsIgnoreCase(parts[1]) || "reset".equalsIgnoreCase(parts[1]))) {
+            portfolioService.clearPortfolio(chatId)
+                    .doOnSuccess(v -> sendMessage(chatId, "🗑 Ваш инвестиционный портфель полностью очищен.", null))
+                    .subscribe(null, e -> {
+                        log.error("Failed to clear portfolio for chatId {}: {}", chatId, e.getMessage());
+                        sendMessage(chatId, "⚠️ Ошибка при очистке портфеля.", null);
+                    });
+            return;
+        }
+
+        // Default: display portfolio summary
+        portfolioService.getPortfolioSummary(chatId)
+                .doOnSuccess(summary -> {
+                    if (summary == null || summary.getPositions() == null || summary.getPositions().isEmpty()) {
+                        InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder()
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("➕ HSBK").callbackData("PORTFOLIO_ADD_HSBK").build(),
+                                        InlineKeyboardButton.builder().text("➕ KZAP").callbackData("PORTFOLIO_ADD_KZAP").build(),
+                                        InlineKeyboardButton.builder().text("➕ KSPI").callbackData("PORTFOLIO_ADD_KSPI").build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("➕ KMGZ").callbackData("PORTFOLIO_ADD_KMGZ").build(),
+                                        InlineKeyboardButton.builder().text("➕ CORE").callbackData("PORTFOLIO_ADD_CORE").build(),
+                                        InlineKeyboardButton.builder().text("➕ CCBN").callbackData("PORTFOLIO_ADD_CCBN").build()
+                                ))
+                                .keyboardRow(new InlineKeyboardRow(
+                                        InlineKeyboardButton.builder().text("📋 Список всех акций").callbackData("MENU_STOCKS").build()
+                                ))
+                                .build();
+
+                        sendMessage(chatId,
+                                "💼 <b>Ваш инвестиционный портфель пока пуст</b>\n\n" +
+                                "Ведите учет своих акций KASE &amp; AIX, следите за прибылью/убытком (P&amp;L) в реальном времени и получайте прогноз дивидендных выплат!\n\n" +
+                                "📝 <b>Как добавить акцию:</b>\n" +
+                                "Отправьте команду в формате:\n" +
+                                "<code>/portfolio add ТИКЕР КОЛИЧЕСТВО [ЦЕНА_ПОКУПКИ]</code>\n\n" +
+                                "<i>Примеры:</i>\n" +
+                                "• <code>/portfolio add HSBK 100 240.50</code>\n" +
+                                "• <code>/portfolio add KZAP 50</code> <i>(цена покупки определится по текущему рынку)</i>\n" +
+                                "• <code>/portfolio add KSPI 10 45000</code>\n\n" +
+                                "<i>Или нажмите на тикер ниже для быстрой подсказки:</i>",
+                                kb);
+                        return;
+                    }
+
+                    StringBuilder sb = new StringBuilder();
+                    String pnlSign = summary.getTotalUnrealizedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
+                    String pnlBadge = summary.getTotalUnrealizedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "🟢" : "🔴";
+
+                    sb.append("💼 <b>Инвестиционный портфель</b>\n\n");
+                    sb.append(String.format("📊 Оценка портфеля: <b>%s ₸</b>\n", formatMoney(summary.getTotalCurrentValue())));
+                    sb.append(String.format("💵 Вложено средств: <b>%s ₸</b>\n", formatMoney(summary.getTotalInvested())));
+                    sb.append(String.format("📈 Прибыль/Убыток (P&amp;L): <b>%s%s ₸ (%s%.2f%%)</b> %s\n",
+                            pnlSign, formatMoney(summary.getTotalUnrealizedPnl()),
+                            pnlSign, summary.getTotalUnrealizedPnlPercent(), pnlBadge));
+                    sb.append(String.format("💰 Ожидаемые див. в год: <b>~%s ₸</b> (~%.2f%% годовых)\n",
+                            formatMoney(summary.getTotalExpectedAnnualDividends()), summary.getPortfolioDividendYieldPercent()));
+                    sb.append(String.format("🏷 Позиций: <b>%d</b>\n\n", summary.getTotalPositionsCount()));
+                    sb.append("───────────────────────\n");
+                    sb.append("<b>Состав портфеля:</b>\n\n");
+
+                    List<InlineKeyboardRow> rows = new ArrayList<>();
+                    List<InlineKeyboardButton> delButtons = new ArrayList<>();
+
+                    for (PortfolioPositionDto p : summary.getPositions()) {
+                        String posSign = p.getUnrealizedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
+                        String posBadge = p.getUnrealizedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "🟢" : "🔴";
+
+                        sb.append(String.format(
+                                "🔹 <b>%s</b> (%s) — <b>%s шт.</b> [<b>%.1f%%</b>]\n" +
+                                "   • Рынок: <b>%s %s</b> | Покупка: <b>%s %s</b>\n" +
+                                "   • Стоимость: <b>%s %s</b>\n" +
+                                "   • Результат: <b>%s%s %s (%s%.2f%%)</b> %s\n",
+                                escapeHtml(p.getCompanyName()), p.getTicker(),
+                                p.getQuantity().stripTrailingZeros().toPlainString(),
+                                p.getPortfolioSharePercent() != null ? p.getPortfolioSharePercent() : BigDecimal.ZERO,
+                                formatMoney(p.getCurrentPrice()), p.getCurrency(),
+                                formatMoney(p.getBuyPrice()), p.getCurrency(),
+                                formatMoney(p.getCurrentValue()), p.getCurrency(),
+                                posSign, formatMoney(p.getUnrealizedPnl()), p.getCurrency(),
+                                posSign, p.getUnrealizedPnlPercent(), posBadge
+                        ));
+
+                        if (p.getExpectedAnnualDividends() != null && p.getExpectedAnnualDividends().compareTo(BigDecimal.ZERO) > 0) {
+                            sb.append(String.format("   • Дивиденды: ~<b>%s %s/год</b> (YOC: %.2f%%)\n",
+                                    formatMoney(p.getExpectedAnnualDividends()), p.getCurrency(),
+                                    p.getDividendYieldOnCost()));
+                        }
+                        sb.append("\n");
+
+                        delButtons.add(InlineKeyboardButton.builder()
+                                .text("❌ " + p.getTicker())
+                                .callbackData("PORTFOLIO_DEL_" + p.getTicker())
+                                .build());
+                    }
+
+                    for (int i = 0; i < delButtons.size(); i += 4) {
+                        rows.add(new InlineKeyboardRow(delButtons.subList(i, Math.min(i + 4, delButtons.size()))));
+                    }
+
+                    rows.add(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("🔄 Обновить").callbackData("PORTFOLIO").build(),
+                            InlineKeyboardButton.builder().text("💰 Дивиденды").callbackData("DIV_MENU").build(),
+                            InlineKeyboardButton.builder().text("🗑 Очистить").callbackData("PORTFOLIO_CLEAR").build()
+                    ));
+                    rows.add(new InlineKeyboardRow(
+                            InlineKeyboardButton.builder().text("📑 Полный аналитический отчет").callbackData("REPORT_MENU").build()
+                    ));
+
+                    InlineKeyboardMarkup kb = InlineKeyboardMarkup.builder().keyboard(rows).build();
+                    sendMessage(chatId, sb.toString(), kb);
+                })
+                .subscribe(null, e -> {
+                    log.error("Failed to load portfolio for chatId {}: {}", chatId, e.getMessage());
+                    sendMessage(chatId, "⚠️ Не удалось загрузить данные портфеля. Попробуйте позже.", null);
                 });
     }
 
@@ -1890,6 +2148,13 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
                 • <code>/my_alerts</code> — список ваших активных алертов с кнопками отмены
                 • <code>/threshold &lt;ПРОЦЕНТ&gt;</code> — настроить порог уведомлений об изменении цен акций (по умолч. ±3.0%)
 
+                💼 <b>Инвестиционный портфель и Дивиденды:</b>
+                • <code>/portfolio</code> или <code>💼 Мой портфель</code> — ваш портфель, оценка, P&amp;L и дивидендный доход
+                • <code>/portfolio add &lt;ТИКЕР&gt; &lt;КОЛ-ВО&gt; [ЦЕНА]</code> — добавить/изменить позицию
+                • <code>/portfolio del &lt;ТИКЕР&gt;</code> — удалить позицию из портфеля
+                • <code>/dividends</code> — календарь ближайших дивидендных отсечек KASE &amp; AIX
+                • <code>/dividend &lt;ТИКЕР&gt;</code> — дивидендный паспорт акции (HSBK, KZAP, CORE...)
+
                 📊 <b>Облигации и Рынки:</b>
                 • <code>/discounts</code> — облигации с дисконтом (≤ 95% от номинала)
                 • <code>/top</code> — самые доходные облигации в тенге
@@ -1950,9 +2215,9 @@ public class KaseTelegramBot implements SpringLongPollingBot, LongPollingSingleT
 
         return ReplyKeyboardMarkup.builder()
                 .keyboardRow(new KeyboardRow("⚡ Пульс рынка", "📈 Акции KASE"))
-                .keyboardRow(new KeyboardRow("💰 Дивиденды", "🏆 Топ доходностей"))
-                .keyboardRow(new KeyboardRow("📉 Скидки (<95%)", "⚖️ Арбитраж KASE/AIX"))
-                .keyboardRow(new KeyboardRow("📑 Отчеты (PDF/Excel)", "🧮 Калькулятор"))
+                .keyboardRow(new KeyboardRow("💼 Мой портфель", "💰 Дивиденды"))
+                .keyboardRow(new KeyboardRow("🏆 Топ доходностей", "📉 Скидки (<95%)"))
+                .keyboardRow(new KeyboardRow("⚖️ Арбитраж KASE/AIX", "📑 Отчеты (PDF/Excel)"))
                 .keyboardRow(new KeyboardRow("🔔 Мои алерты", settingsLabel))
                 .keyboardRow(new KeyboardRow("ℹ️ О боте"))
                 .resizeKeyboard(true)
